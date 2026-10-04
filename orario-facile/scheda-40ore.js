@@ -209,6 +209,12 @@ const Scheda40 = (() => {
         else if (b.dataset.q40 === 'tutti') cambiaTutti(b.checked);
       });
     }
+    // finché non si sa se chi usa la pagina è autorizzato non si legge niente (verifica40 in index.html ridisegna dopo)
+    if (permesso !== true) {
+      box.innerHTML = permesso === false ? '<p class="hint">Per questa scheda serve SI nella colonna «40 ore» del file Autorizzazioni.</p>'
+        : '<p class="hint">Controllo l\'autorizzazione «40 ore»… (serve aver fatto l\'accesso con l\'account della scuola)</p>';
+      return;
+    }
     if (!risultato && !errore && !inCorso) carica(); else disegna();
   }
 
