@@ -17,6 +17,12 @@
         ]);
   Stili: 'titolo' (grande, grassetto), 'intest' (grassetto su grigio), 'evid' (sfondo giallo), 'evidGrassetto',
   'grassetto'. I numeri si scrivono con una o due cifre decimali (0,5 · 1,75).
+  Altro (facoltativo):
+  - una cella con formula: { f: 'SUM(D5:D9)', stile: 'grassetto' } (senza «=», con i nomi inglesi delle funzioni: Excel la
+    calcola all'apertura);
+  - nascoste: [7] = colonne nascoste (contando da 0), per esempio una colonna tecnica che serve a rileggere il file;
+  - elenchi: [{ zona: 'G6:G40', valori: ['SI', 'NO'] }] = menu a tendina nelle celle della zona.
+  Lo usano la scheda «40+40» di Orario Facile (estratti per le scuole di completamento) e l'app («Le mie 40+40»).
 */
 const Xlsx = (() => {
   const xml = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
@@ -56,6 +62,7 @@ const Xlsx = (() => {
   function foglio(f) {
     const righe = (f.righe || []).map((riga, r) => `<row r="${r + 1}">` + (riga || []).map((c, k) => {
       const cella = c !== null && typeof c === 'object' ? c : { v: c };
+      if (cella.f) return `<c r="${lettera(k)}${r + 1}" s="${stileDi(cella.stile, true)}"><f>${xml(cella.f)}</f></c>`;
       if (cella.v === '' || cella.v == null) return cella.stile ? `<c r="${lettera(k)}${r + 1}" s="${stileDi(cella.stile, false)}"/>` : '';
       const num = typeof cella.v === 'number' && isFinite(cella.v);
       const s = stileDi(cella.stile, num);
@@ -64,9 +71,14 @@ const Xlsx = (() => {
     }).join('') + '</row>').join('');
     const blocca = f.blocca ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${f.blocca}" topLeftCell="A${f.blocca + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
       : '<sheetViews><sheetView workbookViewId="0"/></sheetViews>';
-    const colonne = (f.larghezze || []).length ? '<cols>' + f.larghezze.map((l, i) => `<col min="${i + 1}" max="${i + 1}" width="${l}" customWidth="1"/>`).join('') + '</cols>' : '';
+    const nascoste = new Set(f.nascoste || []);
+    const nCol = Math.max((f.larghezze || []).length, ...[...nascoste].map(n => n + 1), 0);
+    const colonne = nCol ? '<cols>' + Array.from({ length: nCol }, (x, i) =>
+      `<col min="${i + 1}" max="${i + 1}" width="${(f.larghezze || [])[i] || 10}" customWidth="1"${nascoste.has(i) ? ' hidden="1"' : ''}/>`).join('') + '</cols>' : '';
+    const elenchi = (f.elenchi || []).length ? `<dataValidations count="${f.elenchi.length}">` + f.elenchi.map(e =>
+      `<dataValidation type="list" allowBlank="1" showDropDown="0" showErrorMessage="1" sqref="${e.zona}"><formula1>"${xml(e.valori.join(','))}"</formula1></dataValidation>`).join('') + '</dataValidations>' : '';
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      blocca + colonne + `<sheetData>${righe}</sheetData>` +
+      blocca + colonne + `<sheetData>${righe}</sheetData>` + elenchi +
       '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>' +
       (f.orizzontale ? '<pageSetup orientation="landscape" paperSize="9"/>' : '<pageSetup paperSize="9"/>') + '</worksheet>';
   }
@@ -95,7 +107,7 @@ const Xlsx = (() => {
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
       { nome: 'xl/workbook.xml', testo: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
-        nomi.map((n, i) => `<sheet name="${xml(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + '</sheets></workbook>' },
+        nomi.map((n, i) => `<sheet name="${xml(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + '</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>' },
       { nome: 'xl/_rels/workbook.xml.rels', testo: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
         fogli.map((f, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('') +
         `<Relationship Id="rId${fogli.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },

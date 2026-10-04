@@ -25,7 +25,7 @@ const Docx = (() => {
   }
 
   // ---------- ZIP senza compressione ----------
-  // tipo = tipo del file (Word se manca); lo usa anche orario-facile/xlsx.js per gli Excel
+  // tipo = tipo del file (Word se manca); lo usa anche app/js/xlsx.js per gli Excel
   function zip(file, tipo) {   // file = [{ nome, testo }]
     const cod = new TextEncoder();
     const parti = [], centrale = [];

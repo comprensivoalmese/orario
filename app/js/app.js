@@ -622,7 +622,7 @@
       .then(j => {
         if (j === null && !NomiDocenti.gettoneDisponibile([NomiDocenti.PERMESSO_DRIVE])) return;   // manca il permesso: si riprova
         letto40 = true;
-        mie40 = j && j.docenti && j.docenti[codice40()] ? { dati: j.docenti[codice40()], aggiornato: j.aggiornato } : null;
+        mie40 = j && j.docenti && j.docenti[codice40()] ? { dati: j.docenti[codice40()], aggiornato: j.aggiornato, anno: j.anno || '' } : null;
         $('#btn40ore').hidden = !mie40;
       })
       .catch(() => { letto40 = true; })
@@ -655,7 +655,7 @@
     $('#finestra40ore').showModal();
     // si rilegge il file, così si vede l'ultima versione pubblicata
     QuarantaOre.leggiPubblicato(utente.email).then(j => {
-      mie40 = j && j.docenti && j.docenti[codice40()] ? { dati: j.docenti[codice40()], aggiornato: j.aggiornato } : null;
+      mie40 = j && j.docenti && j.docenti[codice40()] ? { dati: j.docenti[codice40()], aggiornato: j.aggiornato, anno: j.anno || '' } : null;
       $('#btn40ore').hidden = !mie40;
       mostra();
     }).catch(() => { /* resta quello di prima */ });
@@ -813,6 +813,17 @@
     $('#piuSecondi').addEventListener('click', () => impostaSecondi(Math.min(600, (Math.floor(secondiIngresso / 5) + 1) * 5)));
     $('#btn40ore').addEventListener('click', apri40);
     $('#btnMieSostituzioni').addEventListener('click', apriMieSostituzioni);
+    // «📥 Scarica il mio Excel» dentro «Le mie 40+40»: le proprie ore in A e B con la colonna «Esonero» (js/quaranta-ore.js, js/xlsx.js)
+    $('#contenuto40ore').addEventListener('click', e => {
+      if (!e.target.closest('[data-q40-excel]') || !mie40 || typeof Xlsx === 'undefined') return;
+      const nome = mioDocente && mioDocente.codice ? mioDocente.nome : '';   // il nome vero c'è solo con i nomi caricati
+      const d = QuarantaOre.daPubblicato(mie40.dati, codice40(), nome);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(Xlsx.crea(QuarantaOre.excelDocente(d, mie40.anno)));
+      a.download = `Le mie 40+40 - ${(nome || codice40()).replace(/[\\\/:*?"<>|]/g, '')}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    });
     $('#btnChiudi40ore').addEventListener('click', () => $('#finestra40ore').close());
     $('#btnSchermoIntero').addEventListener('click', () => {
       document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});

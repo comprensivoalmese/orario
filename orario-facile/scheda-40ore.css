@@ -43,3 +43,7 @@
   .q40-tabella tbody th, .q40-tabella thead th { position: static; }
   .q40-vis { display: none; }
 }
+
+/* Ore di formazione obbligatoria scritte nel prospetto e impegni esonerati nel dettaglio */
+.q40-form input { width: 64px; padding: 3px 4px; text-align: right; font: inherit; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text); }
+.q40-esonerato td { text-decoration: line-through; color: var(--text-3); }

@@ -225,6 +225,8 @@ select {
 .q40-dettaglio td:nth-child(4) { text-align: right; }
 .q40-passato td { color: var(--testo-tenue); }
 .q40-oltre { color: var(--errore); font-weight: 700; }
+.q40-esonero td { text-decoration: line-through; color: var(--testo-tenue); }
+.finestra-40ore [data-q40-excel] { width: auto; margin: 4px 8px 4px 0; }
 .q40-nota { font-size: .85rem; color: var(--testo-tenue); }
 body.modalita-monitor .qr-app { width: min(420px, 60vh); }
 a.voce-menu { display: flex; align-items: center; text-decoration: none; color: var(--primario); }

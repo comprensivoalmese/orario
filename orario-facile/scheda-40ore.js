@@ -17,7 +17,7 @@ const Scheda40 = (() => {
   const CONTA = { prime: 'prime 40', seconde: 'seconde 40', formazione: 'formazione', no: 'non conta' };
 
   let box = null, opz = null;
-  let foglio = null, risultato = null, errore = '', inCorso = false, stato = '';
+  let foglio = null, risultato = null, classiCorrenti = null, errore = '', inCorso = false, stato = '';
   const aperti = new Set();
 
   // ---------- chi può vedere la scheda ----------
@@ -43,7 +43,8 @@ const Scheda40 = (() => {
       const D = await opz.orario();
       if (typeof Compresenze !== 'undefined') { Compresenze.impostaSostegno(true); await Compresenze.scarica(); }
       foglio = await QuarantaOre.leggiFoglio(email);
-      risultato = QuarantaOre.calcola(foglio, QuarantaOre.classiDaOrario(D));
+      classiCorrenti = QuarantaOre.classiDaOrario(D);
+      risultato = QuarantaOre.calcola(foglio, classiCorrenti);
       stato = '';
     } catch (e) {
       errore = e.message || String(e);
@@ -65,6 +66,8 @@ const Scheda40 = (() => {
       <button class="btn pubblica" data-q40="pubblica" ${risultato ? '' : 'disabled'}>📤 Pubblica per i docenti</button>
       <button class="btn" data-q40="stampa" ${risultato ? '' : 'disabled'}>🖨 Stampa</button>
       <a class="btn" href="${link}" target="_blank" rel="noopener">📄 Apri il Foglio «40 ore»</a>
+      <button class="btn" data-q40="importa" ${risultato ? '' : 'disabled'}>📥 Importa proposte di esonero</button>
+      <input type="file" id="q40File" accept=".xlsx,.ods" multiple hidden>
       ${foglio ? `<label class="q40-tutti"><input type="checkbox" data-q40="tutti" ${foglio.visibileTutti ? 'checked' : ''}> Visibile a tutti i docenti (ognuno le proprie, nell'app)</label>` : ''}
     </div>`;
     if (stato) h += `<p class="hint" role="status">${esc(stato)}</p>`;
@@ -84,24 +87,28 @@ const Scheda40 = (() => {
       let r = `<tr class="q40-riga${aperto ? ' aperta' : ''}" data-codice="${esc(d.codice)}">
         <th scope="row"><button class="q40-apri" data-q40="apri" aria-expanded="${aperto}">${aperto ? '▾' : '▸'} ${esc(nome(d))}</button>
           <span class="q40-codice">${esc(d.codice)}${d.scuola ? ' · COE con ' + esc(d.scuola) : ''}${d.dal ? ' · dal ' + esc(d.dal.split('-').reverse().join('/')) : ''}</span></th>
-        <td>${esc(d.tipo)}</td>${td(d.oreSett)}${td(d.dovute)}${td(d.prime)}${td(d.seconde)}${td(d.formazione)}
+        <td>${esc(d.tipo)}</td>${td(d.oreSett)}${td(d.dovute)}${td(d.prime)}${td(d.seconde)}
+        <td class="num q40-form"><input type="number" min="0" step="0.5" inputmode="decimal" data-q40="formazione" value="${d.oreFormazione || ''}" placeholder="0"
+          aria-label="Ore di formazione obbligatoria di ${esc(nome(d))}" ${d.riga ? '' : 'disabled'}>${d.formazione !== (d.oreFormazione || 0) ? `<span class="q40-codice">in tutto ${ore(d.formazione)}</span>` : ''}</td>
+        ${td(d.esonerate)}
         ${td(d.residuoPrime, true)}${td(d.residuoSeconde, true)}${td(d.residuo, true)}
         <td class="q40-vis"><input type="checkbox" data-q40="visibile" aria-label="Visibile a ${esc(nome(d))}" ${d.visibile ? 'checked' : ''} ${d.riga ? '' : 'disabled'}></td></tr>`;
-      if (aperto) r += `<tr class="q40-dettaglio"><td colspan="11">${dettaglio(d)}</td></tr>`;
+      if (aperto) r += `<tr class="q40-dettaglio"><td colspan="12">${dettaglio(d)}</td></tr>`;
       return r;
     }).join('');
     return `<div class="q40-tabella-box"><table class="q40-tabella"><caption>Prospetto 40+40 per docente${foglio.anno ? ' – ' + esc(foglio.anno) : ''}
         <span class="hint">(tocca un nome per il dettaglio; in rosso le ore oltre il dovuto)</span></caption>
       <thead><tr><th scope="col">Docente</th><th scope="col">Tipo</th><th scope="col">Ore sett.</th><th scope="col">Dovute (per ciascuna)</th>
-        <th scope="col">Prime 40</th><th scope="col">Seconde 40</th><th scope="col">Formazione</th>
+        <th scope="col">Prime 40</th><th scope="col">Seconde 40</th><th scope="col">Formazione obbligatoria (ore)</th><th scope="col">Esonerate</th>
         <th scope="col">Restano prime</th><th scope="col">Restano seconde</th><th scope="col">Restano in tutto</th><th scope="col">Visibile</th></tr></thead>
       <tbody>${righe}</tbody></table></div>`;
   }
   function dettaglio(d) {
     if (!d.dettaglio.length) return '<p class="hint">Nessun impegno: controlla le classi del docente nell\'orario.</p>';
-    return `<p class="hint">Classi (cattedre + sostegno): ${esc(d.classi.join(' ') || 'nessuna')}${d.nonConta ? ` · scrutini ed esami: ${ore(d.nonConta)} ore (non contano)` : ''}</p>
+    return `<p class="hint">Classi (cattedre + sostegno): ${esc(d.classi.join(' ') || 'nessuna')}${d.nonConta ? ` · scrutini ed esami: ${ore(d.nonConta)} ore (non contano)` : ''}
+        <button class="btn" data-q40="excel" data-codice="${esc(d.codice)}">📥 Excel del docente (per gli esoneri)</button></p>
       <table class="q40-mini"><thead><tr><th scope="col">Giorno</th><th scope="col">Orario</th><th scope="col">Impegno</th><th scope="col">Ore</th><th scope="col">Conta in</th></tr></thead><tbody>` +
-      d.dettaglio.map(x => `<tr class="q40-${x.conta}"><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${esc(x.impegno)}</td><td class="num">${ore(x.ore)}</td><td>${esc(CONTA[x.conta] || x.conta)}</td></tr>`).join('') +
+      d.dettaglio.map(x => `<tr class="q40-${x.conta}${x.esonero ? ' q40-esonerato' : ''}"><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${esc(x.impegno)}</td><td class="num">${ore(x.ore)}</td><td>${esc(CONTA[x.conta] || x.conta)}${x.esonero ? ' · esonerato' : ''}</td></tr>`).join('') +
       '</tbody></table>';
   }
   function scuole() {
@@ -143,6 +150,67 @@ const Scheda40 = (() => {
       foglio.visibileTutti = si;
       await pubblica('Salvato nel Foglio.');
     } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
+  }
+
+  // Ore di formazione obbligatoria di un docente: nel Foglio (scheda Docenti, «Ore formazione»), poi ricalcolo e pubblicazione
+  async function cambiaFormazione(codice, valore) {
+    const d = risultato.docenti.find(x => x.codice === codice);
+    if (!d) return;
+    const n = Math.max(0, Math.round((parseFloat(String(valore).replace(',', '.')) || 0) * 100) / 100);
+    stato = 'Salvo nel Foglio…'; disegna();
+    try {
+      await QuarantaOre.scriviFormazione(foglio, d, n, opz.email());
+      const f = foglio.docenti.find(x => x.codice === codice); if (f) f.oreFormazione = n;
+      ricalcola();
+      await pubblica('Salvato nel Foglio.');
+    } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
+  }
+  function ricalcola() { risultato = QuarantaOre.calcola(foglio, classiCorrenti); }
+
+  // L'Excel di un docente (lo stesso che il docente scarica dall'app): per mandarglielo o per segnare gli esoneri qui
+  function scaricaExcel(codice) {
+    const d = risultato.docenti.find(x => x.codice === codice);
+    if (!d) return;
+    scarica(Xlsx.crea(QuarantaOre.excelDocente(Object.assign({}, d, { nome: nome(d) }), foglio.anno)), `Le mie 40+40 - ${nome(d)}.xlsx`);
+  }
+  function scarica(blob, nomeFile) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nomeFile.replace(/[\\\/:*?"<>|]/g, '');
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+
+  /*
+    PROPOSTE DI ESONERO: gli Excel rimandati dai docenti (anche più di uno insieme). Per ogni file: chi è (codice nel file),
+    quali impegni hanno SI in «Esonero». Dopo la conferma le righe vanno nella scheda «Esoneri» del Foglio (quelle di prima
+    di quel docente si sostituiscono), il conto si rifà e si ripubblica.
+  */
+  async function importaEsoneri(files) {
+    const proposte = [], errori = [];
+    for (const f of files) {
+      try {
+        const x = QuarantaOre.leggiEsoneriDaExcel(await Foglio.leggiTabelle(f));
+        const d = risultato.docenti.find(y => y.codice === x.codice);
+        if (!d) { errori.push(`${f.name}: il codice ${x.codice || '?'} non è tra i docenti`); continue; }
+        const voci = d.dettaglio.filter(y => x.chiavi.includes(y.data + '|' + y.impegno) && (y.conta === 'prime' || y.conta === 'seconde'))
+          .map(y => ({ data: y.data, impegno: y.impegno, ore: y.ore }));
+        proposte.push({ d, voci });
+      } catch (e) { errori.push(`${f.name}: ${e.message || e}`); }
+    }
+    if (!proposte.length) { stato = '⚠️ Nessuna proposta importata. ' + errori.join(' · '); disegna(); return; }
+    const testo = proposte.map(p => `${nome(p.d)}: ${p.voci.length} impegni, ${ore(p.voci.reduce((s, v) => s + v.ore, 0))} ore`).join('; ');
+    const esegui = async () => {
+      stato = 'Salvo gli esoneri nel Foglio…'; disegna();
+      try {
+        for (const p of proposte) await QuarantaOre.scriviEsoneri(foglio, p.d.codice, nome(p.d), p.voci, opz.email());
+        ricalcola();
+        await pubblica(`Esoneri salvati (${testo}).${errori.length ? ' Non letti: ' + errori.join(' · ') + '.' : ''}`);
+      } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
+    };
+    const domanda = `Importare queste proposte di esonero? ${testo}. Per ogni docente sostituiscono quelle importate prima.` +
+      (errori.length ? ` (Non letti: ${errori.join(' · ')})` : '');
+    if (typeof chiedi === 'function') chiedi(domanda, esegui, 'Importa'); else if (confirm(domanda)) esegui();
   }
 
   // ---------- estratto per una scuola di completamento (Excel) ----------
@@ -200,13 +268,17 @@ const Scheda40 = (() => {
         else if (az === 'pubblica') pubblica('');
         else if (az === 'stampa') window.print();
         else if (az === 'estratto') estratto(b.dataset.scuola);
+        else if (az === 'excel') scaricaExcel(b.dataset.codice);
+        else if (az === 'importa') box.querySelector('#q40File').click();
         else if (az === 'apri') { const c = b.closest('tr').dataset.codice; aperti.has(c) ? aperti.delete(c) : aperti.add(c); disegna(); }
       });
       box.addEventListener('change', e => {
+        if (e.target.id === 'q40File') { const f = [...e.target.files]; e.target.value = ''; if (f.length) importaEsoneri(f); return; }
         const b = e.target.closest('input[data-q40]');
         if (!b) return;
         if (b.dataset.q40 === 'visibile') cambiaVisibile(b.closest('tr').dataset.codice, b.checked);
         else if (b.dataset.q40 === 'tutti') cambiaTutti(b.checked);
+        else if (b.dataset.q40 === 'formazione') cambiaFormazione(b.closest('tr').dataset.codice, b.value);
       });
     }
     // finché non si sa se chi usa la pagina è autorizzato non si legge niente (verifica40 in index.html ridisegna dopo)
