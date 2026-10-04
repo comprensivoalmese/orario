@@ -177,8 +177,9 @@ Le parti del progetto:
   ESONERI e FORMAZIONE (dal 04/10/2026): il docente scarica dall'app («Le mie 40+40» → «📥 Scarica il mio Excel», `excelDocente`)
   le sue ore in A e B con la colonna «Esonero» (SI) e una colonna nascosta «chiave» = `data|impegno`; lo rimanda e chi è
   autorizzato lo reimporta con «📥 Importa proposte di esonero» (`leggiEsoneriDaExcel`): righe nella scheda «Esoneri» del Foglio
-  (Codice, Docente, Data, Impegno, Ore, Importato il; quelle di quel docente si sostituiscono), gli impegni esonerati non contano
-  più. Le ore di formazione obbligatoria di ogni docente si scrivono nel prospetto (colonna «Ore formazione» della scheda Docenti,
+  (Codice, Docente, Data, Impegno, Ore, Importato il, Approvato; quelle di quel docente si sostituiscono, le già approvate restano
+  approvate). Contano SOLO gli esoneri con SI in «Approvato» (tasti «✓ Approva» / «Approva tutte» nel dettaglio del docente,
+  `scriviApprovato`, oppure a mano nel Foglio); le proposte in attesa si vedono in giallo e nel riquadro degli avvisi. Le ore di formazione obbligatoria di ogni docente si scrivono nel prospetto (colonna «Ore formazione» della scheda Docenti,
   creata se manca) e si sommano alla formazione degli impegni. `app/js/xlsx.js` (spostato da orario-facile/) sa scrivere formule,
   colonne nascoste e menu a tendina; nell'app servono anche `../sostituzioni/js/docx.js` (lo ZIP) e `js/xlsx.js`.
   Le spunte «Visibile» si scrivono nel Foglio e si pubblicano subito: `quaranta-ore.json` nella `cartellaImpegni`, SOLO codici e solo

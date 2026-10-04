@@ -77,14 +77,14 @@ const QuarantaOre = (() => {
   const file = () => (typeof CONFIG !== 'undefined' && CONFIG.file40ore) || '';
   const configurato = () => !!file() && typeof NomiDocenti !== 'undefined';
 
-  // La scheda «Esoneri» (una riga per impegno da cui un docente è esonerato) può non esserci ancora: senza, si rilegge
+  // La scheda «Esoneri» (una riga per impegno proposto o approvato per l'esonero di un docente) può non esserci ancora: senza, si rilegge
   // il Foglio senza di lei (Google rifiuta tutta la richiesta se manca anche una sola scheda)
   async function leggiFoglio(email) {
     const t = await NomiDocenti.gettone([NomiDocenti.PERMESSO_DRIVE], email);
     const prendi = zone => fetch(SHEETS + encodeURIComponent(file()) + '/values:batchGet?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER&' +
       zone.map(z => 'ranges=' + encodeURIComponent(z)).join('&'), { cache: 'no-cache', headers: { Authorization: 'Bearer ' + t } });
     const base = ["'Impegni'!A1:L3000", "'Docenti'!A1:L400", "'Impostazioni'!A1:F60"];
-    let r = await prendi(base.concat(["'Esoneri'!A1:F3000"])), conEsoneri = true;
+    let r = await prendi(base.concat(["'Esoneri'!A1:G3000"])), conEsoneri = true;
     if (r.status === 400) { r = await prendi(base); conEsoneri = false; }
     if (r.status === 403 || r.status === 404) throw new Error('il tuo account non può aprire il Foglio «40 ore» (va condiviso con chi è autorizzato)');
     if (r.status === 400) throw new Error('nel Foglio «40 ore» mancano le schede «Impegni», «Docenti» o «Impostazioni»');
@@ -154,18 +154,20 @@ const QuarantaOre = (() => {
         oreFormazione: numero(w(r, 'formazione')) || 0
       });
     });
-    // Esoneri: Codice, Docente, Data, Impegno, Ore (una riga per impegno). Map codice → Set di «data|impegno»
+    // Esoneri: Codice, Docente, Data, Impegno, Ore, Importato il, Approvato (una riga per impegno).
+    // Map codice → Map «data|impegno» → { approvato, riga } (riga = numero di riga nel Foglio, per segnare «Approvato»)
     const esoneri = new Map();
     const ei = (eso || [])[0] || [];
-    const e = { codice: colonna(ei, t => t.startsWith('codice')), data: colonna(ei, t => t.startsWith('data')), impegno: colonna(ei, t => t.startsWith('impegno')) };
-    if (e.codice >= 0 && e.data >= 0 && e.impegno >= 0) (eso || []).slice(1).forEach(r => {
+    const e = { codice: colonna(ei, t => t.startsWith('codice')), data: colonna(ei, t => t.startsWith('data')), impegno: colonna(ei, t => t.startsWith('impegno')),
+      approvato: colonna(ei, t => t.startsWith('approvat')) };
+    if (e.codice >= 0 && e.data >= 0 && e.impegno >= 0) (eso || []).slice(1).forEach((r, i) => {
       const codice = String(r[e.codice] || '').trim().toUpperCase(), dd = data(r[e.data]), imp = String(r[e.impegno] || '').trim();
       if (!codice || !dd || !imp) return;
-      if (!esoneri.has(codice)) esoneri.set(codice, new Set());
-      esoneri.get(codice).add(dd + '|' + imp);
+      if (!esoneri.has(codice)) esoneri.set(codice, new Map());
+      esoneri.get(codice).set(dd + '|' + imp, { approvato: e.approvato >= 0 && si(r[e.approvato]), riga: i + 2 });
     });
     return { impegni, docenti, categorie, visibileTutti, anno, colonnaVisibile: d.visibile, colonnaFormazione: d.formazione, colonneDocenti: di.length,
-      colonnaImpostazioni: (set || []).findIndex(r => semplice(r[0]).includes('visibile')), esoneri, righeEsoneri: (eso || []).slice(1) };
+      colonnaImpostazioni: (set || []).findIndex(r => semplice(r[0]).includes('visibile')), esoneri, righeEsoneri: (eso || []).slice(1), colonnaApprovato: e.approvato };
   }
   /*
     Scrutini ed esami con la colonna Classi vuota: le classi si ricavano dal titolo, così ogni docente risulta solo nei suoi
@@ -275,7 +277,10 @@ const QuarantaOre = (() => {
     });
     const docenti = elenco.map(d => {
       const mie = classi.get(d.codice) || new Set();
-      const esonerato = foglio.esoneri && foglio.esoneri.get(d.codice) || new Set();
+      // solo gli esoneri APPROVATI tolgono ore; quelli proposti e non ancora approvati si vedono soltanto
+      const proposte = foglio.esoneri && foglio.esoneri.get(d.codice) || new Map();
+      const esonerato = new Set([...proposte].filter(([, x]) => x.approvato).map(([k]) => k));
+      const proposto = new Set([...proposte].filter(([, x]) => !x.approvato).map(([k]) => k));
       const tocca = b => (!d.dal || b.data >= d.dal) && (!b.classi.length || b.classi.some(c => mie.has(c)));
       const miei = bl.filter(b => b.conta !== 'altro' && tocca(b));
       const tot = { prime: 0, seconde: 0, formazione: 0, no: 0 };
@@ -287,19 +292,22 @@ const QuarantaOre = (() => {
       const perImpegno = new Map();
       miei.forEach(b => { if (!perImpegno.has(b.chiave)) perImpegno.set(b.chiave, []); perImpegno.get(b.chiave).push(b); });
       const dettaglio = [...perImpegno.values()].map(g => ({ data: g[0].data, orario: orarioDi(g), impegno: g[0].impegno, ore: arrotonda(durata(g)), conta: g[0].conta,
-        esonero: esonerato.has(g[0].chiave) }))
+        esonero: esonerato.has(g[0].chiave), proposto: proposto.has(g[0].chiave) }))
         .sort((a, b) => (a.data + a.orario).localeCompare(b.data + b.orario));
       const esonerate = arrotonda(dettaglio.filter(x => x.esonero && (x.conta === 'prime' || x.conta === 'seconde')).reduce((s, x) => s + x.ore, 0));
+      const proposteOre = arrotonda(dettaglio.filter(x => x.proposto && (x.conta === 'prime' || x.conta === 'seconde')).reduce((s, x) => s + x.ore, 0));
       // formazione: quella scritta negli impegni + le ore attribuite al docente nella scheda «Docenti»
       tot.formazione += d.oreFormazione || 0;
       const dov = dovute(d.tipo, d.oreSett);
       return Object.assign({}, d, {
         classi: [...mie].sort(), dovute: dov,
-        prime: arrotonda(tot.prime), seconde: arrotonda(tot.seconde), formazione: arrotonda(tot.formazione), nonConta: arrotonda(tot.no), esonerate,
+        prime: arrotonda(tot.prime), seconde: arrotonda(tot.seconde), formazione: arrotonda(tot.formazione), nonConta: arrotonda(tot.no), esonerate, proposte: proposteOre,
         residuoPrime: arrotonda(dov - tot.prime), residuoSeconde: arrotonda(dov - tot.seconde),
         residuo: arrotonda(2 * dov - tot.prime - tot.seconde - tot.formazione), dettaglio
       });
     }).sort((a, b) => (a.nome || a.codice).localeCompare(b.nome || b.codice, 'it'));
+    const daApprovare = docenti.filter(d => d.dettaglio.some(x => x.proposto));
+    if (daApprovare.length) avvisi.unshift(`Proposte di esonero da approvare: ${daApprovare.map(d => (d.nome || d.codice) + ' (' + d.dettaglio.filter(x => x.proposto).length + ')').join(', ')}. Apri il dettaglio del docente per approvarle.`);
     // l'elenco degli impegni (una riga per giorno + impegno), per il piano degli estratti
     const perChiave = new Map();
     bl.forEach(b => { if (!perChiave.has(b.chiave)) perChiave.set(b.chiave, []); perChiave.get(b.chiave).push(b); });
@@ -347,32 +355,55 @@ const QuarantaOre = (() => {
   }
 
   /*
-    ESONERI: la scheda «Esoneri» del Foglio (Codice, Docente, Data, Impegno, Ore, Importato il), una riga per impegno.
-    scriviEsoneri sostituisce TUTTE le righe di quel docente con quelle nuove (voci = [{ data, impegno, ore }]);
-    se la scheda non c'è la crea. Gli impegni esonerati non contano più nel suo calcolo (calcola).
+    ESONERI: la scheda «Esoneri» del Foglio (Codice, Docente, Data, Impegno, Ore, Importato il, Approvato), una riga per impegno.
+    - scriviEsoneri: le PROPOSTE importate dall'Excel del docente sostituiscono tutte le sue righe (voci = [{ data, impegno, ore }]);
+      un impegno che era già approvato resta approvato, i nuovi restano «da approvare» (Approvato vuoto). Se la scheda non
+      c'è la crea.
+    - scriviApprovato: SI/NO nella colonna «Approvato» di una riga (tasto «Approva» della scheda 40+40, oppure a mano nel Foglio).
+    Solo gli esoneri APPROVATI tolgono ore nel calcolo (calcola).
   */
-  async function scriviEsoneri(foglio, codice, nome, voci, email) {
+  const TITOLI_ESONERI = ['Codice', 'Docente', 'Data', 'Impegno', 'Ore', 'Importato il', 'Approvato'];
+  const dataIt = v => typeof v === 'number' ? data(v).split('-').reverse().join('/') : v;   // le date lette come numeri di serie
+  async function chiamaFoglio(percorso, metodo, corpo, email) {
     const t = await NomiDocenti.gettone([NomiDocenti.PERMESSO_DRIVE, SCRIVERE], email);
-    const chiama = async (percorso, metodo, corpo) => {
-      const r = await fetch(SHEETS + encodeURIComponent(file()) + percorso, {
-        method: metodo, headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined
-      });
-      if (!r.ok) throw new Error(r.status === 403 ? 'il tuo account non può modificare il Foglio «40 ore»' : 'errore ' + r.status + ' da Google');
-      return r.json();
-    };
+    const r = await fetch(SHEETS + encodeURIComponent(file()) + percorso, {
+      method: metodo, headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined
+    });
+    if (!r.ok) throw new Error(r.status === 403 ? 'il tuo account non può modificare il Foglio «40 ore»' : 'errore ' + r.status + ' da Google');
+    return r.json();
+  }
+  async function scriviEsoneri(foglio, codice, nome, voci, email) {
     if (!foglio.conEsoneri) {
-      await chiama(':batchUpdate', 'POST', { requests: [{ addSheet: { properties: { title: 'Esoneri' } } }] });
+      await chiamaFoglio(':batchUpdate', 'POST', { requests: [{ addSheet: { properties: { title: 'Esoneri' } } }] }, email);
       foglio.conEsoneri = true; foglio.righeEsoneri = [];
     }
     const k = String(codice).toUpperCase();
-    const altre = (foglio.righeEsoneri || []).filter(r => String(r[0] || '').trim().toUpperCase() !== k && r.some(c => c !== '' && c != null));
+    const prima = foglio.esoneri.get(k) || new Map();
+    const altre = (foglio.righeEsoneri || []).filter(r => String(r[0] || '').trim().toUpperCase() !== k && r.some(c => c !== '' && c != null))
+      .map(r => [r[0], r[1], dataIt(r[2]), r[3], r[4], dataIt(r[5]), r[6] == null ? '' : r[6]]);
     const oggi = new Date().toLocaleDateString('it-IT');
-    const nuove = voci.map(v => [k, nome || '', v.data.split('-').reverse().join('/'), v.impegno, v.ore, oggi]);
-    const valori = [['Codice', 'Docente', 'Data', 'Impegno', 'Ore', 'Importato il']].concat(altre, nuove);
-    await chiama('/values/' + encodeURIComponent("'Esoneri'!A:F") + ':clear', 'POST', {});
-    await chiama('/values/' + encodeURIComponent(`'Esoneri'!A1:F${valori.length}`) + '?valueInputOption=USER_ENTERED', 'PUT', { values: valori });
+    const nuove = voci.map(v => [k, nome || '', v.data.split('-').reverse().join('/'), v.impegno, v.ore, oggi,
+      (prima.get(v.data + '|' + v.impegno) || {}).approvato ? 'SI' : '']);
+    const valori = [TITOLI_ESONERI].concat(altre, nuove);
+    await chiamaFoglio('/values/' + encodeURIComponent("'Esoneri'!A:G") + ':clear', 'POST', {}, email);
+    await chiamaFoglio('/values/' + encodeURIComponent(`'Esoneri'!A1:G${valori.length}`) + '?valueInputOption=USER_ENTERED', 'PUT', { values: valori }, email);
+    // si rifà l'elenco in memoria con i numeri di riga nuovi
     foglio.righeEsoneri = altre.concat(nuove);
-    foglio.esoneri.set(k, new Set(voci.map(v => v.data + '|' + v.impegno)));
+    foglio.colonnaApprovato = 6;
+    foglio.esoneri = new Map();
+    foglio.righeEsoneri.forEach((r, i) => {
+      const c = String(r[0]).toUpperCase(), chiave = data(r[2]) + '|' + r[3];
+      if (!foglio.esoneri.has(c)) foglio.esoneri.set(c, new Map());
+      foglio.esoneri.get(c).set(chiave, { approvato: si(r[6]), riga: i + 2 });
+    });
+  }
+  async function scriviApprovato(foglio, codice, chiave, valore, email) {
+    const x = (foglio.esoneri.get(String(codice).toUpperCase()) || new Map()).get(chiave);
+    if (!x) throw new Error('questa proposta di esonero non è più nel Foglio: rileggilo');
+    let col = foglio.colonnaApprovato;
+    if (col == null || col < 0) { col = 6; await scriviCella(`'Esoneri'!G1`, 'Approvato', email); foglio.colonnaApprovato = col; }
+    await scriviCella(`'Esoneri'!${lettera(col)}${x.riga}`, valore ? 'SI' : '', email);
+    x.approvato = !!valore;
   }
 
   /*
@@ -397,7 +428,7 @@ const QuarantaOre = (() => {
       righe.push([{ v: titolo, stile: 'grassetto' }]);
       righe.push(['Giorno', 'Orario', 'Impegno', 'Ore', 'Esonero (SI)', 'chiave (non toccare)'].map(I));
       const da = righe.length + 1;
-      d.dettaglio.filter(x => x.conta === conta).forEach(x => righe.push([giornoLungo(x.data), x.orario, x.impegno, x.ore, { v: x.esonero ? 'SI' : '', stile: 'evid' }, x.data + '|' + x.impegno]));
+      d.dettaglio.filter(x => x.conta === conta).forEach(x => righe.push([giornoLungo(x.data), x.orario, x.impegno, x.ore, { v: x.esonero || x.proposto ? 'SI' : '', stile: 'evid' }, x.data + '|' + x.impegno]));
       const a = Math.max(righe.length, da);
       if (righe.length >= da) zone.push(`E${da}:E${a}`);
       const D = `D${da}:D${a}`, E = `E${da}:E${a}`;
@@ -445,7 +476,7 @@ const QuarantaOre = (() => {
     risultato.docenti.filter(d => foglio.visibileTutti || d.visibile).forEach(d => {
       docenti[d.codice] = {
         tipo: d.tipo, oreSett: d.oreSett, dovute: d.dovute, prime: d.prime, seconde: d.seconde, formazione: d.formazione,
-        dal: d.dal || '', esonerate: d.esonerate || 0, dettaglio: d.dettaglio.map(x => [x.data, x.orario, x.impegno, x.ore, x.conta, x.esonero ? 1 : 0])
+        dal: d.dal || '', esonerate: d.esonerate || 0, proposte: d.proposte || 0, dettaglio: d.dettaglio.map(x => [x.data, x.orario, x.impegno, x.ore, x.conta, x.esonero ? 1 : x.proposto ? 2 : 0])
       };
     });
     return { tipo: 'quaranta-ore', anno: foglio.anno, aggiornato: new Date().toISOString(), docenti };
@@ -487,12 +518,13 @@ const QuarantaOre = (() => {
     const riga = (titolo, dov, fatte) => `<tr><th scope="row">${titolo}</th><td>${ore(dov)}</td><td>${ore(fatte)}</td><td class="${dov - fatte < 0 ? 'q40-oltre' : ''}">${ore(dov - fatte)}</td></tr>`;
     const oggi = new Date().toISOString().slice(0, 10);
     const dett = d.dettaglio.map(([data, orario, imp, h, conta, eso]) =>
-      `<tr class="${data < oggi ? 'q40-passato' : ''}${eso ? ' q40-esonero' : ''}"><td>${esc(giorno(data))}</td><td>${esc(orario)}</td><td>${esc(imp)}</td><td>${ore(h)}</td><td>${esc(NOMI_CONTA[conta] || conta)}${eso ? ' · esonerato' : ''}</td></tr>`).join('');
+      `<tr class="${data < oggi ? 'q40-passato' : ''}${eso === 1 ? ' q40-esonero' : ''}"><td>${esc(giorno(data))}</td><td>${esc(orario)}</td><td>${esc(imp)}</td><td>${ore(h)}</td><td>${esc(NOMI_CONTA[conta] || conta)}${eso === 1 ? ' · esonerato' : eso === 2 ? ' · esonero proposto, in attesa di approvazione' : ''}</td></tr>`).join('');
     return `<table class="q40-riepilogo"><caption>Le tue ore${d.tipo !== 'COI' ? ` (${esc(d.tipo)}, ${ore(d.oreSett)} ore settimanali: dovute in proporzione)` : ''}</caption>
       <thead><tr><th scope="col"></th><th scope="col">Dovute</th><th scope="col">Programmate</th><th scope="col">Restano</th></tr></thead>
       <tbody>${riga('Prime 40 (collegio, programmazione, famiglie)', d.dovute, d.prime)}${riga('Seconde 40 (consigli di classe, GLO)', d.dovute, d.seconde)}</tbody></table>
       ${d.formazione ? `<p>Formazione obbligatoria: <strong>${ore(d.formazione)}</strong> ore (contano nelle ore che restano delle 80).</p>` : ''}
       ${d.esonerate ? `<p>Esonerato da impegni per <strong>${ore(d.esonerate)}</strong> ore (già tolte dalle programmate).</p>` : ''}
+      ${d.proposte ? `<p>Esoneri proposti in attesa di approvazione: <strong>${ore(d.proposte)}</strong> ore (per ora contano ancora).</p>` : ''}
       <p><button type="button" class="pulsante" data-q40-excel>📥 Scarica il mio Excel</button>
         <span class="q40-nota">Le tue ore divise in A e B: scrivi SI nella colonna «Esonero» per gli impegni da cui chiedi l'esonero e rimanda il file a chi gestisce l'orario.</span></p>
       <table class="q40-dettaglio"><caption>Impegni dell'anno</caption>
@@ -504,8 +536,8 @@ const QuarantaOre = (() => {
 
   // Una voce pubblicata (dettaglio come array) nella forma usata da excelDocente
   const daPubblicato = (d, codice, nome) => Object.assign({}, d, { codice, nome,
-    dettaglio: d.dettaglio.map(([data, orario, impegno, ore, conta, esonero]) => ({ data, orario, impegno, ore, conta, esonero: !!esonero })) });
+    dettaglio: d.dettaglio.map(([data, orario, impegno, ore, conta, esonero]) => ({ data, orario, impegno, ore, conta, esonero: esonero === 1, proposto: esonero === 2 })) });
 
-  return { configurato, leggiFoglio, interpreta, classiDaOrario, calcola, scriviVisibile, scriviVisibileTutti, scriviFormazione, scriviEsoneri,
+  return { configurato, leggiFoglio, interpreta, classiDaOrario, calcola, scriviVisibile, scriviVisibileTutti, scriviFormazione, scriviEsoneri, scriviApprovato,
     excelDocente, leggiEsoneriDaExcel, daPubblicato, pubblica, datiDaPubblicare, leggiPubblicato, htmlDocente, NOMI_CONTA, dovute, file };
 })();

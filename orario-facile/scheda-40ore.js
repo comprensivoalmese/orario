@@ -90,7 +90,7 @@ const Scheda40 = (() => {
         <td>${esc(d.tipo)}</td>${td(d.oreSett)}${td(d.dovute)}${td(d.prime)}${td(d.seconde)}
         <td class="num q40-form"><input type="number" min="0" step="0.5" inputmode="decimal" data-q40="formazione" value="${d.oreFormazione || ''}" placeholder="0"
           aria-label="Ore di formazione obbligatoria di ${esc(nome(d))}" ${d.riga ? '' : 'disabled'}>${d.formazione !== (d.oreFormazione || 0) ? `<span class="q40-codice">in tutto ${ore(d.formazione)}</span>` : ''}</td>
-        ${td(d.esonerate)}
+        <td class="num">${ore(d.esonerate)}${d.proposte ? `<span class="q40-codice q40-attesa">+${ore(d.proposte)} da approvare</span>` : ''}</td>
         ${td(d.residuoPrime, true)}${td(d.residuoSeconde, true)}${td(d.residuo, true)}
         <td class="q40-vis"><input type="checkbox" data-q40="visibile" aria-label="Visibile a ${esc(nome(d))}" ${d.visibile ? 'checked' : ''} ${d.riga ? '' : 'disabled'}></td></tr>`;
       if (aperto) r += `<tr class="q40-dettaglio"><td colspan="12">${dettaglio(d)}</td></tr>`;
@@ -106,9 +106,13 @@ const Scheda40 = (() => {
   function dettaglio(d) {
     if (!d.dettaglio.length) return '<p class="hint">Nessun impegno: controlla le classi del docente nell\'orario.</p>';
     return `<p class="hint">Classi (cattedre + sostegno): ${esc(d.classi.join(' ') || 'nessuna')}${d.nonConta ? ` · scrutini ed esami: ${ore(d.nonConta)} ore (non contano)` : ''}
-        <button class="btn" data-q40="excel" data-codice="${esc(d.codice)}">📥 Excel del docente (per gli esoneri)</button></p>
+        <button class="btn" data-q40="excel" data-codice="${esc(d.codice)}">📥 Excel del docente (per gli esoneri)</button>
+        ${d.dettaglio.some(x => x.proposto) ? `<button class="btn" data-q40="approvaTutte" data-codice="${esc(d.codice)}">✓ Approva tutte le proposte</button>` : ''}</p>
       <table class="q40-mini"><thead><tr><th scope="col">Giorno</th><th scope="col">Orario</th><th scope="col">Impegno</th><th scope="col">Ore</th><th scope="col">Conta in</th></tr></thead><tbody>` +
-      d.dettaglio.map(x => `<tr class="q40-${x.conta}${x.esonero ? ' q40-esonerato' : ''}"><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${esc(x.impegno)}</td><td class="num">${ore(x.ore)}</td><td>${esc(CONTA[x.conta] || x.conta)}${x.esonero ? ' · esonerato' : ''}</td></tr>`).join('') +
+      d.dettaglio.map(x => `<tr class="q40-${x.conta}${x.esonero ? ' q40-esonerato' : ''}${x.proposto ? ' q40-proposto' : ''}"><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${esc(x.impegno)}</td><td class="num">${ore(x.ore)}</td><td>${esc(CONTA[x.conta] || x.conta)}` +
+        (x.esonero ? ` · esonerato <button class="btn piccolo" data-q40="approva" data-valore="" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">↺ Togli approvazione</button>` : '') +
+        (x.proposto ? ` · esonero proposto <button class="btn piccolo" data-q40="approva" data-valore="SI" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✓ Approva</button>` : '') +
+        '</td></tr>').join('') +
       '</tbody></table>';
   }
   function scuole() {
@@ -167,6 +171,16 @@ const Scheda40 = (() => {
   }
   function ricalcola() { risultato = QuarantaOre.calcola(foglio, classiCorrenti); }
 
+  // Approvare (o togliere l'approvazione a) una o tutte le proposte di esonero di un docente: colonna «Approvato» del Foglio
+  async function approva(codice, chiavi, valore) {
+    stato = 'Salvo nel Foglio…'; disegna();
+    try {
+      for (const k of chiavi) await QuarantaOre.scriviApprovato(foglio, codice, k, valore, opz.email());
+      ricalcola();
+      await pubblica(valore ? `Esonero approvato (${chiavi.length}).` : 'Approvazione tolta.');
+    } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
+  }
+
   // L'Excel di un docente (lo stesso che il docente scarica dall'app): per mandarglielo o per segnare gli esoneri qui
   function scaricaExcel(codice) {
     const d = risultato.docenti.find(x => x.codice === codice);
@@ -205,10 +219,10 @@ const Scheda40 = (() => {
       try {
         for (const p of proposte) await QuarantaOre.scriviEsoneri(foglio, p.d.codice, nome(p.d), p.voci, opz.email());
         ricalcola();
-        await pubblica(`Esoneri salvati (${testo}).${errori.length ? ' Non letti: ' + errori.join(' · ') + '.' : ''}`);
+        await pubblica(`Proposte di esonero salvate (${testo}): contano solo dopo l'approvazione (dettaglio del docente o colonna «Approvato» del Foglio).${errori.length ? ' Non letti: ' + errori.join(' · ') + '.' : ''}`);
       } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
     };
-    const domanda = `Importare queste proposte di esonero? ${testo}. Per ogni docente sostituiscono quelle importate prima.` +
+    const domanda = `Importare queste proposte di esonero? ${testo}. Per ogni docente sostituiscono quelle importate prima (gli esoneri già approvati restano approvati); le nuove contano solo quando le approvi.` +
       (errori.length ? ` (Non letti: ${errori.join(' · ')})` : '');
     if (typeof chiedi === 'function') chiedi(domanda, esegui, 'Importa'); else if (confirm(domanda)) esegui();
   }
@@ -269,6 +283,11 @@ const Scheda40 = (() => {
         else if (az === 'stampa') window.print();
         else if (az === 'estratto') estratto(b.dataset.scuola);
         else if (az === 'excel') scaricaExcel(b.dataset.codice);
+        else if (az === 'approva') approva(b.dataset.codice, [b.dataset.chiave], b.dataset.valore === 'SI');
+        else if (az === 'approvaTutte') {
+          const d = risultato.docenti.find(x => x.codice === b.dataset.codice);
+          if (d) approva(d.codice, d.dettaglio.filter(x => x.proposto).map(x => x.data + '|' + x.impegno), true);
+        }
         else if (az === 'importa') box.querySelector('#q40File').click();
         else if (az === 'apri') { const c = b.closest('tr').dataset.codice; aperti.has(c) ? aperti.delete(c) : aperti.add(c); disegna(); }
       });
