@@ -21,6 +21,7 @@ img{max-width:100%}
 <!-- stile della scheda Sostituzioni (i suoi file stanno nella cartella sostituzioni/) -->
 <link rel="stylesheet" href="../sostituzioni/css/sostituzioni.css">
 <link rel="stylesheet" href="scheda-compresenze.css">
+<link rel="stylesheet" href="scheda-40ore.css">
 <link rel="stylesheet" href="../app/css/piantine.css">
 <!-- Porta d'ingresso: entra solo chi può modificare l'orario (vedi porta.js e ../app/js/ruoli.js) -->
 <link rel="stylesheet" href="porta.css">
@@ -559,6 +560,17 @@ td input[type=number]{width:64px}
     </div>
     <div id="sostituzioniApp"><p class="hint">Caricamento…</p></div>
   </section>
+
+  <!-- 11 40+40: attività funzionali dei docenti; il contenuto lo disegna scheda-40ore.js (solo per chi ha SI in «40 ore») -->
+  <section class="panel" id="p-quaranta" role="tabpanel" hidden>
+    <div class="phead">
+      <h2>Attività funzionali (40+40 ore)</h2>
+      <p>Per ogni docente della secondaria le ore di collegi, programmazione, incontri con le famiglie (prime 40) e di consigli
+        di classe e GLO (seconde 40), calcolate dal Foglio «40 ore» con le classi dell'orario ufficiale. Ogni docente può vedere
+        le proprie nell'app, se è spuntato «Visibile».</p>
+    </div>
+    <div id="quarantaApp"><p class="hint">Caricamento…</p></div>
+  </section>
   <!-- Copyright e condizioni d'uso del codice (vedi LICENZA.md) -->
   <footer class="hint no-print" style="margin:24px 0 8px;text-align:center">
     © 2026 Istituto Comprensivo di Almese – realizzato dal Gruppo Wolf
@@ -587,6 +599,10 @@ td input[type=number]{width:64px}
 <script src="../sostituzioni/js/uscite.js"></script>
 <script src="../sostituzioni/js/docx.js"></script>
 <script src="../sostituzioni/js/scioperi.js"></script>
+<!-- Scheda 40+40 (attività funzionali dei docenti): calcolo condiviso con l'app, Excel degli estratti -->
+<script src="xlsx.js"></script>
+<script src="../app/js/quaranta-ore.js"></script>
+<script src="scheda-40ore.js"></script>
 
 <script>
 /* ===========================================================
@@ -1593,11 +1609,13 @@ function aulaPerCella(docId, g, s, escludiClasse){
 const TABS = [
   ['setup','Impostazioni'], ['discipline','Discipline'], ['aule','Aule'], ['quadro','Quadro orario'],
   ['docenti','Docenti'], ['vincoli','Vincoli'], ['orario','Orario'], ['compresenze','Compresenze'], ['esporta','Esporta'],
-  ['sostituzioni','Sostituzioni']
+  ['sostituzioni','Sostituzioni'], ['quaranta','40+40']
 ];
+// La scheda «40+40» si vede solo a chi ha SI nella colonna «40 ore» delle Autorizzazioni (scheda-40ore.js)
+const schedeVisibili = () => TABS.filter(([k]) => k !== 'quaranta' || (typeof Scheda40 !== 'undefined' && Scheda40.puo()));
 
 function renderTabs(){
-  $('#tabs').innerHTML = TABS.map(([k,n],i) =>
+  $('#tabs').innerHTML = schedeVisibili().map(([k,n],i) =>
     `<button role="tab" data-tab="${k}" aria-selected="${S.ui.tab===k}"><span class="tnum">${i+1}</span>${esc(n)}</button>`).join('');
   // sugli schermi stretti la fila delle schede scorre di lato: porto in vista quella scelta
   // (così per esempio "9 Sostituzioni" non resta nascosta a destra)
@@ -1607,7 +1625,7 @@ function renderTabs(){
 function vai(tab){
   S.ui.tab = tab;
   // passando a un'altra scheda tolgo "#sostituzioni" / "#compresenze" dall'indirizzo, così il link dell'app funziona di nuovo
-  if(location.hash && location.hash !== '#' + tab && ['#sostituzioni', '#compresenze'].includes(location.hash)) history.replaceState(null, '', location.pathname + location.search);
+  if(location.hash && location.hash !== '#' + tab && ['#sostituzioni', '#compresenze', '#quaranta'].includes(location.hash)) history.replaceState(null, '', location.pathname + location.search);
   TABS.forEach(([k]) => { const p = $('#p-'+k); if(p) p.hidden = (k !== tab); });
   renderTabs();
   render();
@@ -1617,7 +1635,7 @@ function render(){
   $('#brandSub').textContent = (S.meta.nome||'') + (S.meta.anno ? ' · ' + S.meta.anno : '');
   const f = { setup:renderSetup, discipline:renderDiscipline, aule:renderAule, quadro:renderQuadro,
               docenti:renderDocenti, vincoli:renderVincoli, orario:renderOrario, compresenze:renderCompresenze, esporta:()=>{},
-              sostituzioni:renderSostituzioni }[S.ui.tab];
+              sostituzioni:renderSostituzioni, quaranta:renderQuaranta }[S.ui.tab];
   if(f) f();
 }
 
@@ -1670,6 +1688,32 @@ function montaSostituzioni(box){
     const D = Object.assign({}, orarioSost, { docente, mappa: Object.assign({}, orarioSost.mappa, { docente: new Map(docente.map(e => [e.id, e])) }) });
     if(NOMI) D.docente.forEach(e => { e.codice = e.nome; e.nome = nomeDoc(e.nome); });
     return D;
+  });
+}
+
+/* ---------------- 11. 40+40 ---------------- */
+// La scheda vive in scheda-40ore.js (calcolo in ../app/js/quaranta-ore.js): usa l'orario UFFICIALE pubblicato,
+// come le sostituzioni, e i nomi veri se sono caricati con «👁 Nomi» (altrimenti quelli del Foglio «40 ore»)
+const emailSessione = () => { const s = typeof Accesso !== 'undefined' && Accesso.sessione ? Accesso.sessione() : null; return s ? s.email : ''; };
+function renderQuaranta(){
+  const box = $('#quarantaApp');
+  if(typeof Scheda40 === 'undefined' || typeof QuarantaOre === 'undefined' || typeof Dati === 'undefined'){
+    box.innerHTML = '<p class="hint">La scheda 40+40 non è disponibile: mancano scheda-40ore.js o app/js/quaranta-ore.js.</p>';
+    return;
+  }
+  Scheda40.monta(box, {
+    orario: () => orarioSost ? Promise.resolve(orarioSost) : Dati.caricaPubblicato().then(P => (orarioSost = P)),
+    email: emailSessione,
+    nome: codice => nomeVero(codice) ? nomeVero(codice).completo : ''
+  });
+}
+// All'avvio: chi ha SI in «40 ore» vede comparire la scheda (il permesso di Google può arrivare dopo: si riprova)
+function verifica40(tentativo){
+  if(typeof Scheda40 === 'undefined') return;
+  Scheda40.controlla(emailSessione()).then(esito => {
+    if(esito === null && tentativo < 200) { setTimeout(() => verifica40(tentativo + 1), 3000); return; }
+    renderTabs();
+    if(S.ui.tab === 'quaranta') render();
   });
 }
 
@@ -3782,13 +3826,14 @@ document.addEventListener('keydown', e => { if(e.key==='Escape') chiudiModal(); 
   S = salvato || datiScuola();
   if(!salvato) S.ui.tab = 'orario';
   // gli indirizzi .../orario-facile/#sostituzioni e #compresenze aprono direttamente quella scheda
-  const DIRETTE = ['sostituzioni', 'compresenze'];
+  const DIRETTE = ['sostituzioni', 'compresenze', 'quaranta'];
   if(DIRETTE.includes(location.hash.slice(1))) S.ui.tab = location.hash.slice(1);
   // ...anche se Orario Facile è già aperto (per esempio dal menu dell'app "Sostituzioni docenti" o dal tasto «✎ Modifica»)
   window.addEventListener('hashchange', () => { const k = location.hash.slice(1); if(DIRETTE.includes(k)) vai(k); });
   normalizza();
   renderTabs();
   TABS.forEach(([k]) => { const p = $('#p-'+k); if(p) p.hidden = (k !== S.ui.tab); });
+  verifica40(0);
   $$('#segVista button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === S.ui.vista));
   render();
   $('#saveState').textContent = salvato ? 'Ripreso dall\'ultimo salvataggio' : 'Dati scuola 2026/27';

@@ -4,7 +4,8 @@
 
   Una riga per persona: Cognome, Nome, email (colonna «Email», «Utente» o «Account») e una colonna per ogni autorizzazione:
   - «Orario Facile»: può aprire Orario Facile (preparare l'orario, compresenze…) e nell'app vede «Passa a Orario Facile»;
-  - «Sostituzioni»: può fare le sostituzioni e i cambi d'aula (nell'app «Sostituzioni smart» e «Cambi d'aula»).
+  - «Sostituzioni»: può fare le sostituzioni e i cambi d'aula (nell'app «Sostituzioni smart» e «Cambi d'aula»);
+  - «40 ore»: vede la scheda «40+40» di Orario Facile (attività funzionali dei docenti, js/quaranta-ore.js).
   Nelle colonne va SI (oppure X, ✓, 1): vuoto o NO = non autorizzato. Le colonne si trovano dal titolo.
 
   Finché la scheda non esiste (passaggio dal sistema di prima) valgono le regole vecchie:
@@ -20,7 +21,7 @@
 */
 const Autorizzazioni = (() => {
   const SCHEDA = 'Autorizzazioni';
-  const TITOLI = ['Nome', 'Cognome', 'Email', 'Orario Facile', 'Sostituzioni', 'Note'];
+  const TITOLI = ['Nome', 'Cognome', 'Email', 'Orario Facile', 'Sostituzioni', '40 ore', 'Note'];
   const semplice = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9@.]/g, '');
   const si = v => /^(si|sì|s|x|✓|✔|1|true|vero|yes)$/i.test(String(v == null ? '' : v).trim());
   const file = () => (typeof CONFIG !== 'undefined' && (CONFIG.fileAutorizzazioni || CONFIG.fileDatabaseOrario)) || '';
@@ -58,7 +59,7 @@ const Autorizzazioni = (() => {
     // la riga dei titoli: quella con «Orario…» o «Sostitu…» (o con il titolo dell'email), altrimenti la prima
     const intest = (righe.find(r => r.some(c => { const s = semplice(c); return s.includes('orario') || s.includes('sostitu') || titoloEmail(s); })) || righe[0] || []).map(semplice);
     const col = f => intest.findIndex(f);
-    const cMail = col(titoloEmail), cOF = col(x => x.includes('orario')), cSost = col(x => x.includes('sostitu'));
+    const cMail = col(titoloEmail), cOF = col(x => x.includes('orario')), cSost = col(x => x.includes('sostitu')), c40 = col(x => x.includes('40'));
     const cNome = col(x => x.includes('nome') && !x.includes('cognome')), cCognome = col(x => x.includes('cognome'));
     const emailDentro = c => (String(c || '').toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) || []).map(semplice);
     const riga = righe.find(r => (cMail >= 0 ? emailDentro(r[cMail]) : r.flatMap(emailDentro)).includes(mia));
@@ -66,6 +67,7 @@ const Autorizzazioni = (() => {
     return {
       orarioFacile: cOF >= 0 && si(riga[cOF]),
       sostituzioni: cSost >= 0 && si(riga[cSost]),
+      quarantaOre: c40 >= 0 && si(riga[c40]),
       nome: [cNome >= 0 ? riga[cNome] : '', cCognome >= 0 ? riga[cCognome] : ''].filter(Boolean).join(' ').trim()
     };
   }
@@ -76,7 +78,7 @@ const Autorizzazioni = (() => {
     chiedi = true: se manca il permesso di Google lo chiede (solo dopo un tocco, altrimenti il browser blocca la finestra).
   */
   async function di(email, chiedi) {
-    const nessuna = { orarioFacile: false, sostituzioni: false, nome: '' };
+    const nessuna = { orarioFacile: false, sostituzioni: false, quarantaOre: false, nome: '' };
     if (!email) return Object.assign(nessuna, { fonte: 'config' });
     if (typeof NomiDocenti === 'undefined' || !file() || !CONFIG.googleClientId) return vecchie(email);
     let t = NomiDocenti.gettoneDisponibile(permesso());
@@ -99,7 +101,7 @@ const Autorizzazioni = (() => {
     if (typeof RegistroDrive !== 'undefined' && RegistroDrive.configurato && RegistroDrive.configurato() && RegistroDrive.pronto()) {
       try { sost = (await RegistroDrive.abilitazioneVecchia(email)).abilitato; } catch (e) { sost = of; }
     }
-    return { orarioFacile: of, sostituzioni: sost, nome: '', fonte: 'config' };
+    return { orarioFacile: of, sostituzioni: sost, quarantaOre: false, nome: '', fonte: 'config' };
   }
 
   // Vero se la scheda «Autorizzazioni» esiste (dopo una lettura); null = non ancora letta
@@ -134,7 +136,7 @@ const Autorizzazioni = (() => {
       const k = semplice(mail); if (!k) return;
       const g = persone.find(p => semplice(p[2]) === k);
       if (g) { if (of) g[3] = 'SI'; if (sost) g[4] = 'SI'; return; }
-      persone.push([nome || '', cognome || '', mail, of ? 'SI' : '', sost ? 'SI' : '', '']);
+      persone.push([nome || '', cognome || '', mail, of ? 'SI' : '', sost ? 'SI' : '', '', '']);
     };
     if (CONFIG.fileSostituzioni) {
       try {
@@ -158,7 +160,7 @@ const Autorizzazioni = (() => {
       : { addSheet: { properties: { title: SCHEDA, index: (info.sheets || []).length } } };
     await chiama(baseDb, ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests: [richiesta] }) });
     const valori = [TITOLI].concat(persone);
-    await chiama(baseDb, '/values/' + encodeURIComponent(`'${SCHEDA}'!A1:F${valori.length}`) + '?valueInputOption=RAW', { method: 'PUT', body: JSON.stringify({ values: valori }) });
+    await chiama(baseDb, '/values/' + encodeURIComponent(`'${SCHEDA}'!A1:G${valori.length}`) + '?valueInputOption=RAW', { method: 'PUT', body: JSON.stringify({ values: valori }) });
     letta = null;
     return persone.length;
   }

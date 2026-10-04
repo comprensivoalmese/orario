@@ -25,7 +25,8 @@ const Docx = (() => {
   }
 
   // ---------- ZIP senza compressione ----------
-  function zip(file) {   // file = [{ nome, testo }]
+  // tipo = tipo del file (Word se manca); lo usa anche orario-facile/xlsx.js per gli Excel
+  function zip(file, tipo) {   // file = [{ nome, testo }]
     const cod = new TextEncoder();
     const parti = [], centrale = [];
     let posizione = 0;
@@ -46,7 +47,7 @@ const Docx = (() => {
     const lungCentrale = centrale.reduce((n, p) => n + p.length, 0);
     const fine = new Uint8Array([0x50, 0x4B, 0x05, 0x06, ...n16(0), ...n16(0), ...n16(file.length), ...n16(file.length),
       ...n32(lungCentrale), ...n32(posizione), ...n16(0)]);
-    return new Blob([...parti, ...centrale, fine], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    return new Blob([...parti, ...centrale, fine], { type: tipo || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
   }
 
   // ---------- Il contenuto in WordprocessingML ----------
@@ -83,5 +84,5 @@ const Docx = (() => {
     ]);
   }
 
-  return { crea };
+  return { crea, zip };
 })();

@@ -165,6 +165,19 @@ Le parti del progetto:
   SECONDARIA e GIORNO/ORARIO, data vuota = giorno sopra), anteprima, poi «Pubblica per tutti» scrive
   `impegni-pubblicati.json` in `CONFIG.cartellaImpegni` (vuota = `cartellaPubblicazione`) (`app/js/impegni-drive.js`, usa chiama/cerca/scriviFile di
   pubblica-drive.js). Il calendario legge Drive, poi la copia sul dispositivo (`orariodada.impegni`); se no resta vuoto.
+- **40+40 ore** (attività funzionali dei docenti, art. 44 c. 3 CCNL 2019-21; dal 04/10/2026): calcolo in `app/js/quaranta-ore.js`,
+  scheda 11 «40+40» di Orario Facile (`orario-facile/scheda-40ore.js` e `.css`, indirizzo `#quaranta`), visibile SOLO a chi ha SI
+  nella colonna «40 ore» del file Autorizzazioni (`Autorizzazioni.di().quarantaOre`). Dati nel Foglio «40 ore» (`CONFIG.file40ore`,
+  con i NOMI: su Drive solo per gli autorizzati): scheda «Impegni» (righe = blocchi di tempo con le CLASSI impegnate: spazio = in
+  parallelo, «/» = uno dopo l'altro con il tempo diviso in parti uguali, vuoto = tutti; GLO = 0,5 ore per gruppo), «Docenti» (tipo di
+  cattedra COI/COE/PAR, ore, scuola di completamento, in servizio dal, Visibile al docente) e «Impostazioni» (Visibile a tutti, tabella
+  Tipo → Conta in). Le classi dei docenti NON stanno nel Foglio: arrivano dall'orario ufficiale pubblicato + sostegno (mai potenziamento).
+  Regola: per giorno e conteggio si somma la durata dell'UNIONE dei blocchi con una classe del docente. Dovute: COI 40+40, COE/PAR
+  40×ore/18 (O.M. 446/1997 art. 7 c. 7); formazione obbligatoria (sicurezza, privacy) a parte, nelle ore che restano delle 80.
+  Le spunte «Visibile» si scrivono nel Foglio e si pubblicano subito: `quaranta-ore.json` nella `cartellaImpegni`, SOLO codici e solo
+  i docenti abilitati; nell'app la voce di menu «Le mie 40+40» (`#btn40ore`, `controlla40()` in app.js) compare al docente il cui codice
+  c'è nel file e mostra solo le sue. «Scarica estratto» crea per ogni scuola di completamento un Excel (`orario-facile/xlsx.js`, che usa
+  `Docx.zip`) con i soli docenti in comune: riepilogo, piano con le righe evidenziate, un foglio per docente.
 - **Vigilanza durante l'intervallo** (idea discussa il 29/09/2026, non ancora fatta): all'inizio dell'intervallo le classi
   si spostano; l'insegnante uscente resta nella sua aula e vigila la classe che vi entra (2ª ora → classe della 3ª per
   9:55–10:05, 4ª → 5ª per 11:50–12:05). Proposta e domande aperte in `app/LEGGIMI.md` (sezione LIM). Se qualcuno lo

@@ -8,7 +8,7 @@ window.CONFIG = {
 
   // Versione dell'app, scritta in fondo alla pagina. Quando si pubblicano modifiche importanti conviene
   // cambiarla qui E nel nome CACHE di sw.js: così tutti i dispositivi scaricano l'app da capo.
-  versioneApp: '2026-10-02.6',
+  versioneApp: '2026-10-04.1',
 
   // Solo gli account di questo dominio possono entrare
   dominio: 'comprensivoalmese.it',
@@ -140,6 +140,12 @@ window.CONFIG = {
   // (dal 02/10/2026: cartella creata apposta per gli impegni, da condividere solo con i docenti)
   cartellaImpegni: '1VBeMvnuJG17h26AIqxXEDA7o8HmRt6om',
   fileImpegniPubblicati: '',
+
+  // 40+40 ORE (attività funzionali dei docenti, js/quaranta-ore.js e orario-facile/scheda-40ore.js): Foglio Google «40 ore»
+  // con le schede Impegni (classi e orari), Docenti (tipo di cattedra, ore, scuola di completamento, «Visibile al docente»)
+  // e Impostazioni. Contiene i NOMI: su Drive va condiviso SOLO con chi ha SI nella colonna «40 ore» delle Autorizzazioni.
+  // Orario Facile pubblica per i docenti «quaranta-ore.json» (solo codici) nella cartellaImpegni. Vuoto = scheda spenta.
+  file40ore: '11B4u4jBuVv4kGQyrt3PRINjRtUcZ-c-m6HVZZbssjp4',
 
   // Per quanti giorni l'accesso resta memorizzato se si spunta "Ricordami"
   giorniRicordami: 30,

@@ -214,6 +214,18 @@ select {
 .indirizzo-app { font-size: .85rem; color: var(--testo-tenue); word-break: break-all; user-select: all; }
 .azioni-finestra { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .esito { min-height: 1.4em; margin: 6px 0 0; font-size: .9rem; }
+
+/* Finestra «Le mie 40+40» (js/quaranta-ore.js): più larga, con il dettaglio che scorre */
+.finestra-40ore { max-width: min(720px, calc(100vw - 24px)); max-height: calc(100vh - 32px); }
+.finestra-40ore table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: 8px 0; }
+.finestra-40ore caption { text-align: left; font-weight: 700; padding: 4px 0; }
+.finestra-40ore th, .finestra-40ore td { padding: 4px 6px; border-bottom: 1px solid var(--bordo); text-align: left; vertical-align: top; }
+.q40-riepilogo td { text-align: right; font-variant-numeric: tabular-nums; }
+.q40-dettaglio { font-size: .85rem; }
+.q40-dettaglio td:nth-child(4) { text-align: right; }
+.q40-passato td { color: var(--testo-tenue); }
+.q40-oltre { color: var(--errore); font-weight: 700; }
+.q40-nota { font-size: .85rem; color: var(--testo-tenue); }
 body.modalita-monitor .qr-app { width: min(420px, 60vh); }
 a.voce-menu { display: flex; align-items: center; text-decoration: none; color: var(--primario); }
 .gruppo-menu { display: grid; gap: 6px; }

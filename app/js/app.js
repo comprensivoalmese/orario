@@ -256,6 +256,7 @@
 
   /* ---------- costruzione dei controlli ---------- */
   function preparaControlli() {
+    controlla40();
     // Menu a tendina dei filtri
     Viste.FILTRI.forEach(k => {
       const sel = $('#filtro-' + k);
@@ -606,7 +607,42 @@
     if (prima !== puoModificareOrario) aggiornaSostegno();
   }
 
+  /*
+    «Le mie 40+40» (js/quaranta-ore.js): la voce del menu compare solo al docente riconosciuto il cui codice c'è nel file
+    pubblicato da Orario Facile (cioè abilitato con «Visibile» o «Visibile a tutti»). Si legge senza aprire la finestra di
+    Google: se il permesso non c'è ancora si riprova al prossimo giro (preparaControlli / aggiornaSostegno).
+  */
+  let mie40 = null, letto40 = false, lettura40 = false;
+  const codice40 = () => mioDocente ? String(mioDocente.codice || mioDocente.nome || '').trim().toUpperCase() : '';
+  function controlla40() {
+    if (!utente || !codice40() || aulaMonitor || secondiIngresso || letto40 || lettura40 || typeof QuarantaOre === 'undefined') return;
+    lettura40 = true;
+    QuarantaOre.leggiPubblicato(utente.email, true)
+      .then(j => {
+        if (j === null && !NomiDocenti.gettoneDisponibile([NomiDocenti.PERMESSO_DRIVE])) return;   // manca il permesso: si riprova
+        letto40 = true;
+        mie40 = j && j.docenti && j.docenti[codice40()] ? { dati: j.docenti[codice40()], aggiornato: j.aggiornato } : null;
+        $('#btn40ore').hidden = !mie40;
+      })
+      .catch(() => { letto40 = true; })
+      .finally(() => { lettura40 = false; });
+  }
+  function apri40() {
+    chiudiMenu();
+    const box = $('#contenuto40ore');
+    const mostra = () => { box.innerHTML = mie40 ? QuarantaOre.htmlDocente(mie40.dati, mie40.aggiornato) : '<p>Le tue 40+40 non sono (più) visibili.</p>'; };
+    mostra();
+    $('#finestra40ore').showModal();
+    // si rilegge il file, così si vede l'ultima versione pubblicata
+    QuarantaOre.leggiPubblicato(utente.email).then(j => {
+      mie40 = j && j.docenti && j.docenti[codice40()] ? { dati: j.docenti[codice40()], aggiornato: j.aggiornato } : null;
+      $('#btn40ore').hidden = !mie40;
+      mostra();
+    }).catch(() => { /* resta quello di prima */ });
+  }
+
   function aggiornaSostegno() {
+    controlla40();
     const vede = !!utente && !aulaMonitor && !secondiIngresso && (puoModificareOrario || !!mioDocente);
     // Il calendario «Impegni» è SOLO PER I DOCENTI (scelta della scuola, 02/10/2026): stessa regola del sostegno
     // (docente riconosciuto dall'email oppure autorizzato a Orario Facile / sostituzioni); gli studenti non vedono il tasto
@@ -755,6 +791,8 @@
     $('#sceltaSecondi').addEventListener('change', e => impostaSecondi(e.target.value));
     $('#menoSecondi').addEventListener('click', () => impostaSecondi(Math.max(5, (Math.ceil(secondiIngresso / 5) - 1) * 5)));
     $('#piuSecondi').addEventListener('click', () => impostaSecondi(Math.min(600, (Math.floor(secondiIngresso / 5) + 1) * 5)));
+    $('#btn40ore').addEventListener('click', apri40);
+    $('#btnChiudi40ore').addEventListener('click', () => $('#finestra40ore').close());
     $('#btnSchermoIntero').addEventListener('click', () => {
       document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
       chiudiMenu();
