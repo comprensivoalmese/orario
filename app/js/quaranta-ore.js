@@ -126,7 +126,7 @@ const QuarantaOre = (() => {
       const tipo = String(v(r, 'tipo') || '').trim() || 'Altro (non conta)';
       impegni.push({
         riga: i + 2, data: d, ini: minuti(v(r, 'inizio')), fin: minuti(v(r, 'fine')), impegno: titolo, tipo,
-        conta: categorie[semplice(tipo)] || indovina(tipo), classi: String(v(r, 'classi') || '').trim(),
+        conta: categorie[semplice(tipo)] || indovina(tipo), classi: String(v(r, 'classi') || '').trim() || classiDalTitolo(tipo, titolo),
         ore: numero(v(r, 'ore')), note: String(v(r, 'note') || '')
       });
     });
@@ -150,6 +150,27 @@ const QuarantaOre = (() => {
     });
     return { impegni, docenti, categorie, visibileTutti, anno, colonnaVisibile: d.visibile, colonnaImpostazioni: (set || []).findIndex(r => semplice(r[0]).includes('visibile')) };
   }
+  /*
+    Scrutini ed esami con la colonna Classi vuota: le classi si ricavano dal titolo, così ogni docente risulta solo nei suoi
+    (non contano nelle 40+40, ma servono al dettaglio e agli estratti per le scuole di completamento):
+    «Scrutini 1C-2C-3C» = uno dopo l'altro; «Scrutini terze» / «prime-seconde»; «Orali A» = 3A; le altre prove = tutte le terze.
+  */
+  const TERZE = '3A 3B 3C 3D 3E';
+  function classiDalTitolo(tipo, titolo) {
+    const t = semplice(tipo), s = String(titolo || '');
+    if (t.startsWith('scrutin')) {
+      if (/terze/i.test(s)) return TERZE.split(' ').join(' / ');
+      if (/prime.?seconde/i.test(s)) return '1A / 1B / 1C / 1D / 1E / 2A / 2B / 2C / 2D / 2E';
+      const c = (s.toUpperCase().match(/\b[1-3]\s?[A-E]\b/g) || []).map(classeSemplice);
+      return c.join(' / ');
+    }
+    if (t.startsWith('esam')) {
+      const o = s.match(/^\s*orali\s+([A-E])\b/i);
+      return o ? '3' + o[1].toUpperCase() : TERZE;
+    }
+    return '';
+  }
+
   // Tipo scritto a mano e non presente nella tabella: lo si riconosce dalle parole
   function indovina(tipo) {
     const s = semplice(tipo);
