@@ -74,6 +74,43 @@ const StoricoSostituzioni = (() => {
     }
   }
 
+  /*
+    IMPORTAZIONE UNA TANTUM (Orario Facile, scheda Sostituzioni, tasto «🗂 Importa nel registro dei docenti»): porta nello
+    storico le sostituzioni già scritte nel foglio «Sostituzioni» del file delle sostituzioni (quelle di settembre, prima
+    che ci fosse lo storico). righe = RegistroDrive.tutte(); nomi = Map codice → { cognome, nome } (NomiDocenti.carica);
+    flagLocale(id) = { senzaOre } dal registro di questo dispositivo, se lo conosce (spostato, uscita, vigilanza di sciopero).
+    Le voci già presenti nello storico non si toccano. Restituisce { aggiunte, gia, ignote: [nomi non riconosciuti] }.
+  */
+  const semplice = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
+  function dataIso(v) {
+    const m = String(v || '').match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+    if (!m) return '';
+    return (m[3].length === 2 ? '20' + m[3] : m[3]) + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+  }
+  async function importa(righe, nomi, flagLocale, email) {
+    const t = await NomiDocenti.gettone([NomiDocenti.PERMESSO_DRIVE], email);
+    const storico = await leggiCon(t);
+    const voci = storico.voci;
+    const perNome = new Map();
+    (nomi || new Map()).forEach((n, codice) => perNome.set(semplice((n.cognome || '') + ' ' + (n.nome || '')), codice));
+    const esito = { aggiunte: 0, gia: 0, ignote: [] };
+    righe.forEach(r => {
+      const id = String(r['ID'] || '').trim();
+      const data = dataIso(r['Data']), ora = parseInt(String(r['Ora'] || ''), 10), classe = String(r['Classe'] || '').trim();
+      const chi = String(r['Docente sostituto'] || '').trim();
+      if (!data || !ora || !classe || !chi) return;
+      const k = id || (data + '|' + ora + '|' + classe);
+      if (voci[k]) { esito.gia++; return; }
+      const codice = /^DOC\d+$/i.test(chi) ? chi.toUpperCase() : perNome.get(semplice(chi));
+      if (!codice) { if (!esito.ignote.includes(chi)) esito.ignote.push(chi); return; }
+      const f = (id && flagLocale && flagLocale(id)) || {};
+      voci[k] = [data, ora, classe, codice, f.senzaOre ? 1 : 0];
+      esito.aggiunte++;
+    });
+    if (esito.aggiunte) await PubblicaDrive.scriviFile(NOME, cartella(), JSON.stringify({ tipo: 'storico-sostituzioni', aggiornato: new Date().toISOString(), voci }), email);
+    return esito;
+  }
+
   // Nell'app: le sostituzioni di un docente (codice), dalla più recente. senzaChiedere: vedi QuarantaOre.leggiPubblicato
   async function mie(codice, email, senzaChiedere) {
     let t = NomiDocenti.gettoneDisponibile([NomiDocenti.PERMESSO_DRIVE]);
@@ -110,5 +147,5 @@ const StoricoSostituzioni = (() => {
         Il conteggio ufficiale delle ore resta quello della segreteria: per differenze rivolgiti a chi gestisce le sostituzioni.</p>`;
   }
 
-  return { aggiorna, mie, html, NOME };
+  return { aggiorna, importa, mie, html, NOME };
 })();

@@ -558,6 +558,12 @@ td input[type=number]{width:64px}
       <button class="btn pubblica" id="btnPubblicaSostituzioni">📤 Pubblica sostituzioni</button>
       <span class="hint" id="statoPubblicaSostituzioni">Salva assenze e sostituzioni su Google Drive: l'app Luis@i le mostra nella tabella dell'orario su tutti i dispositivi.</span>
     </div>
+    <!-- Una volta sola: porta nel registro dei docenti («Le mie sostituzioni» dell'app) le sostituzioni già scritte nel
+         foglio «Sostituzioni» su Drive, prima che il registro esistesse (pubblica.js, ../app/js/storico-sostituzioni.js) -->
+    <div class="pubblica-barra no-print">
+      <button class="btn" id="btnImportaStorico">🗂 Importa nel registro dei docenti</button>
+      <span class="hint" id="statoImportaStorico">Da fare una volta: copia nel registro di «Le mie sostituzioni» (app Luis@i) le sostituzioni del foglio «Sostituzioni» su Drive, anche quelle di settembre. Quelle già presenti non si toccano.</span>
+    </div>
     <div id="sostituzioniApp"><p class="hint">Caricamento…</p></div>
   </section>
 

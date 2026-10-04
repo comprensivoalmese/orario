@@ -88,4 +88,26 @@
         return `Sostituzioni pubblicate: nel file ora ci sono ${r.registro} sostituzioni e ${r.assenze} assenze (comprese quelle degli altri dispositivi).`;
       }), 'Pubblica');
   });
+
+  /* ---------- Importa nel registro dei docenti (una volta sola) ---------- */
+  // Le sostituzioni del foglio «Sostituzioni» (con i nomi veri, letti solo in memoria) entrano nello storico
+  // «sostituzioni-docenti.json» della cartella dei soli docenti, con i codici: vedi app/js/storico-sostituzioni.js
+  const tastoStorico = $id('btnImportaStorico');
+  if (tastoStorico) tastoStorico.addEventListener('click', () => {
+    if (typeof StoricoSostituzioni === 'undefined' || typeof RegistroDrive === 'undefined' || !RegistroDrive.configurato())
+      return avvisa('Manca il file delle sostituzioni (fileSostituzioni in app/js/config.js) o storico-sostituzioni.js.');
+    chiedi('Copiare nel registro dei docenti le sostituzioni scritte nel foglio «Sostituzioni» su Drive? ' +
+      'Ogni docente le vedrà nell\'app in «Le mie sostituzioni» (solo le proprie, senza il nome del collega assente). ' +
+      'Quelle già presenti non si toccano.', () =>
+      lavora(tastoStorico, $id('statoImportaStorico'), async () => {
+        const righe = await RegistroDrive.tutte(email());
+        const nomi = await NomiDocenti.carica(email());
+        // dal registro di questo computer si sa se una sostituzione era «senza ore in più» (spostato, uscita, sciopero)
+        const locale = new Map(Archivio.leggi('registro', []).map(s => [s.id, { senzaOre: !!(s.spostato || s.reindirizzato || s.sciopero) }]));
+        const r = await StoricoSostituzioni.importa(righe, nomi, id => locale.get(id), email());
+        let testo = `Registro dei docenti: ${r.aggiunte} sostituzioni aggiunte, ${r.gia} c'erano già (righe del foglio: ${righe.length}).`;
+        if (r.ignote.length) testo += ` Non ho riconosciuto questi docenti (controlla come sono scritti nel foglio): ${r.ignote.join(', ')}.`;
+        return testo;
+      }), 'Importa');
+  });
 })();

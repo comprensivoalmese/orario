@@ -209,5 +209,15 @@ const RegistroDrive = (() => {
     return o;
   }
 
-  return { configurato, pronto, abilitazione, abilitazioneVecchia, aggiungi, togli, leggi, permessi };
+  // Tutte le righe di un registro come oggetti { 'Data': …, 'Docente sostituto': …, 'ID': … } (titoli delle colonne).
+  // La usa l'importazione nello storico dei docenti (storico-sostituzioni.js): i nomi veri restano solo in memoria.
+  async function tutte(email, tipo) {
+    const reg = REGISTRI[tipo || 'sostituzioni'];
+    const f = await trova(reg.nomi, email, reg.nuovo);
+    const righe = (await chiama('/values/' + encodeURIComponent(tra(f.titolo)), { email })).values || [];
+    const titoli = (righe[0] || []).map(t => String(t).trim());
+    return righe.slice(1).map(r => { const o = {}; titoli.forEach((t, i) => { o[t] = r[i] === undefined ? '' : r[i]; }); return o; });
+  }
+
+  return { configurato, pronto, abilitazione, abilitazioneVecchia, aggiungi, togli, leggi, tutte, permessi };
 })();
