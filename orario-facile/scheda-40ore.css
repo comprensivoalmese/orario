@@ -51,3 +51,6 @@
 .q40-proposto td { background: var(--warn-soft); }
 .q40-attesa { color: var(--warn); font-weight: 600; }
 .q40-mini .btn.piccolo { padding: 1px 6px; font-size: 12px; margin-left: 4px; }
+.q40-esoneri { margin-top: 16px; }
+.q40-esoneri label { display: inline-flex; gap: 6px; align-items: center; }
+.q40-esoneri input[type="search"] { min-width: 240px; padding: 4px 6px; font: inherit; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text); }

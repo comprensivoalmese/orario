@@ -405,6 +405,26 @@ const QuarantaOre = (() => {
     await scriviCella(`'Esoneri'!${lettera(col)}${x.riga}`, valore ? 'SI' : '', email);
     x.approvato = !!valore;
   }
+  // Toglie del tutto dal Foglio alcune righe di esonero di un docente (chiavi = «data|impegno»): le altre restano come sono
+  async function togliEsoneri(foglio, codice, nome, chiavi, email) {
+    const k = String(codice).toUpperCase(), via = new Set(chiavi);
+    const restano = (foglio.righeEsoneri || []).filter(r => String(r[0] || '').trim().toUpperCase() === k)
+      .map(r => ({ data: data(r[2]), impegno: String(r[3] || '').trim(), ore: numero(r[4]) || 0 }))
+      .filter(v => v.data && v.impegno && !via.has(v.data + '|' + v.impegno));
+    return scriviEsoneri(foglio, k, nome, restano, email);
+  }
+  /*
+    Chi è esonerato da ogni impegno: [{ data, impegno, approvati: [codici], proposti: [codici] }], in ordine di data.
+    Lo usano il riquadro «Esoneri per impegno» della scheda 40+40 e il suo Excel.
+  */
+  function esoneriPerImpegno(foglio) {
+    const perChiave = new Map();
+    (foglio.esoneri || new Map()).forEach((voci, codice) => voci.forEach((x, chiave) => {
+      if (!perChiave.has(chiave)) { const i = chiave.indexOf('|'); perChiave.set(chiave, { chiave, data: chiave.slice(0, i), impegno: chiave.slice(i + 1), approvati: [], proposti: [] }); }
+      perChiave.get(chiave)[x.approvato ? 'approvati' : 'proposti'].push(codice);
+    }));
+    return [...perChiave.values()].sort((a, b) => a.chiave.localeCompare(b.chiave));
+  }
 
   /*
     L'EXCEL DEL DOCENTE («Le mie 40+40» nell'app, o dal prospetto): le sue ore divise in A (prime 40) e B (seconde 40),
@@ -538,6 +558,6 @@ const QuarantaOre = (() => {
   const daPubblicato = (d, codice, nome) => Object.assign({}, d, { codice, nome,
     dettaglio: d.dettaglio.map(([data, orario, impegno, ore, conta, esonero]) => ({ data, orario, impegno, ore, conta, esonero: esonero === 1, proposto: esonero === 2 })) });
 
-  return { configurato, leggiFoglio, interpreta, classiDaOrario, calcola, scriviVisibile, scriviVisibileTutti, scriviFormazione, scriviEsoneri, scriviApprovato,
+  return { configurato, leggiFoglio, interpreta, classiDaOrario, calcola, scriviVisibile, scriviVisibileTutti, scriviFormazione, scriviEsoneri, scriviApprovato, togliEsoneri, esoneriPerImpegno,
     excelDocente, leggiEsoneriDaExcel, daPubblicato, pubblica, datiDaPubblicare, leggiPubblicato, htmlDocente, NOMI_CONTA, dovute, file };
 })();

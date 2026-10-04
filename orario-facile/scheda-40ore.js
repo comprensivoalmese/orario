@@ -75,6 +75,7 @@ const Scheda40 = (() => {
     if (risultato) {
       if (risultato.avvisi.length) h += `<details class="q40-avvisi"><summary>⚠️ ${risultato.avvisi.length} cose da controllare nel Foglio</summary><ul>${risultato.avvisi.map(a => `<li>${esc(a)}</li>`).join('')}</ul></details>`;
       h += tabella();
+      h += esoneri();
       h += scuole();
     }
     box.innerHTML = h;
@@ -110,11 +111,44 @@ const Scheda40 = (() => {
         ${d.dettaglio.some(x => x.proposto) ? `<button class="btn" data-q40="approvaTutte" data-codice="${esc(d.codice)}">✓ Approva tutte le proposte</button>` : ''}</p>
       <table class="q40-mini"><thead><tr><th scope="col">Giorno</th><th scope="col">Orario</th><th scope="col">Impegno</th><th scope="col">Ore</th><th scope="col">Conta in</th></tr></thead><tbody>` +
       d.dettaglio.map(x => `<tr class="q40-${x.conta}${x.esonero ? ' q40-esonerato' : ''}${x.proposto ? ' q40-proposto' : ''}"><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${esc(x.impegno)}</td><td class="num">${ore(x.ore)}</td><td>${esc(CONTA[x.conta] || x.conta)}` +
-        (x.esonero ? ` · esonerato <button class="btn piccolo" data-q40="approva" data-valore="" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">↺ Togli approvazione</button>` : '') +
-        (x.proposto ? ` · esonero proposto <button class="btn piccolo" data-q40="approva" data-valore="SI" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✓ Approva</button>` : '') +
+        (x.esonero ? ` · esonerato <button class="btn piccolo" data-q40="approva" data-valore="" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">↺ Togli approvazione</button> <button class="btn piccolo" data-q40="togli" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✕ Togli</button>` : '') +
+        (x.proposto ? ` · esonero proposto <button class="btn piccolo" data-q40="approva" data-valore="SI" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✓ Approva</button> <button class="btn piccolo" data-q40="togli" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✕ Togli</button>` : '') +
         '</td></tr>').join('') +
       '</tbody></table>';
   }
+  /*
+    ESONERI PER IMPEGNO: per ogni giorno e impegno chi è esonerato (approvati) e chi lo ha chiesto (proposte in attesa).
+    La casella «Cerca» filtra le righe (giorno «05/10», parte del nome dell'impegno o del docente) senza ridisegnare.
+  */
+  const nomeDi = codice => { const d = risultato.docenti.find(x => x.codice === codice); return d ? nome(d) : codice; };
+  function esoneri() {
+    const elenco = QuarantaOre.esoneriPerImpegno(foglio);
+    if (!elenco.length) return '';
+    const orario = k => (risultato.impegni.find(p => p.chiave === k) || {}).orario || '';
+    const righe = elenco.map(e => {
+      const testo = [dataIt(e.data), e.data.split('-').reverse().join('/'), e.impegno, ...e.approvati.map(nomeDi), ...e.proposti.map(nomeDi)].join(' ').toLowerCase();
+      return `<tr data-cerca="${esc(testo)}"><td>${esc(dataIt(e.data))}</td><td>${esc(orario(e.chiave))}</td><td>${esc(e.impegno)}</td>
+        <td>${esc(e.approvati.map(nomeDi).join(', ')) || '–'}</td><td class="q40-attesa">${esc(e.proposti.map(nomeDi).join(', '))}</td></tr>`;
+    }).join('');
+    return `<section class="q40-esoneri"><h3>Esoneri per impegno</h3>
+      <div class="q40-barra no-print"><label>Cerca <input type="search" data-q40="cerca" placeholder="giorno (05/10), impegno o docente"></label>
+        <button class="btn" data-q40="excelEsoneri">📥 Scarica l'elenco (Excel)</button></div>
+      <div class="q40-tabella-box"><table class="q40-mini"><thead><tr><th scope="col">Giorno</th><th scope="col">Orario</th><th scope="col">Impegno</th>
+        <th scope="col">Esonerati (approvati)</th><th scope="col">Proposte in attesa</th></tr></thead><tbody>${righe}</tbody></table></div></section>`;
+  }
+  function excelEsoneri() {
+    const I = t => ({ v: t, stile: 'intest' });
+    const orario = k => (risultato.impegni.find(p => p.chiave === k) || {}).orario || '';
+    const righe = [[{ v: `Esoneri dalle attività funzionali – ${foglio.anno || ''}`, stile: 'titolo' }], [`Estratto del ${new Date().toLocaleDateString('it-IT')}`], [],
+      ['Giorno', 'Orario', 'Impegno', 'Docente', 'Ore', 'Stato'].map(I)];
+    QuarantaOre.esoneriPerImpegno(foglio).forEach(e => {
+      const oreDi = codice => { const d = risultato.docenti.find(x => x.codice === codice); const x = d && d.dettaglio.find(y => y.data + '|' + y.impegno === e.chiave); return x ? x.ore : ''; };
+      e.approvati.forEach(c => righe.push([dataIt(e.data), orario(e.chiave), e.impegno, nomeDi(c), oreDi(c), 'approvato']));
+      e.proposti.forEach(c => righe.push([dataIt(e.data), orario(e.chiave), e.impegno, nomeDi(c), oreDi(c), { v: 'in attesa', stile: 'evid' }]));
+    });
+    scarica(Xlsx.crea([{ nome: 'Esoneri', larghezze: [20, 12, 44, 28, 7, 12], blocca: 4, righe }]), `Esoneri 40+40 ${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
   function scuole() {
     const elenco = [...new Set(risultato.docenti.filter(d => d.scuola).map(d => d.scuola))].sort((a, b) => a.localeCompare(b, 'it'));
     if (!elenco.length) return `<section class="q40-scuole no-print"><h3>Scuole di completamento</h3><p class="hint">Scrivi il nome dell'altra scuola
@@ -170,6 +204,21 @@ const Scheda40 = (() => {
     } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
   }
   function ricalcola() { risultato = QuarantaOre.calcola(foglio, classiCorrenti); }
+
+  // Togliere del tutto un esonero (o una proposta) dal Foglio
+  async function togli(codice, chiave) {
+    const d = risultato.docenti.find(x => x.codice === codice);
+    const esegui = async () => {
+      stato = 'Tolgo l\'esonero dal Foglio…'; disegna();
+      try {
+        await QuarantaOre.togliEsoneri(foglio, codice, d ? nome(d) : '', [chiave], opz.email());
+        ricalcola();
+        await pubblica('Esonero tolto.');
+      } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
+    };
+    const domanda = `Togliere l'esonero di ${d ? nome(d) : codice} da «${chiave.split('|')[1]}» del ${chiave.split('|')[0].split('-').reverse().join('/')}? L'impegno tornerà a contare.`;
+    if (typeof chiedi === 'function') chiedi(domanda, esegui, 'Togli'); else if (confirm(domanda)) esegui();
+  }
 
   // Approvare (o togliere l'approvazione a) una o tutte le proposte di esonero di un docente: colonna «Approvato» del Foglio
   async function approva(codice, chiavi, valore) {
@@ -283,6 +332,8 @@ const Scheda40 = (() => {
         else if (az === 'stampa') window.print();
         else if (az === 'estratto') estratto(b.dataset.scuola);
         else if (az === 'excel') scaricaExcel(b.dataset.codice);
+        else if (az === 'togli') togli(b.dataset.codice, b.dataset.chiave);
+        else if (az === 'excelEsoneri') excelEsoneri();
         else if (az === 'approva') approva(b.dataset.codice, [b.dataset.chiave], b.dataset.valore === 'SI');
         else if (az === 'approvaTutte') {
           const d = risultato.docenti.find(x => x.codice === b.dataset.codice);
@@ -290,6 +341,12 @@ const Scheda40 = (() => {
         }
         else if (az === 'importa') box.querySelector('#q40File').click();
         else if (az === 'apri') { const c = b.closest('tr').dataset.codice; aperti.has(c) ? aperti.delete(c) : aperti.add(c); disegna(); }
+      });
+      // «Cerca» negli esoneri per impegno: nasconde le righe che non contengono il testo
+      box.addEventListener('input', e => {
+        if (!e.target.matches('[data-q40="cerca"]')) return;
+        const t = e.target.value.trim().toLowerCase();
+        box.querySelectorAll('.q40-esoneri tbody tr').forEach(r => { r.hidden = !!t && !r.dataset.cerca.includes(t); });
       });
       box.addEventListener('change', e => {
         if (e.target.id === 'q40File') { const f = [...e.target.files]; e.target.value = ''; if (f.length) importaEsoneri(f); return; }
