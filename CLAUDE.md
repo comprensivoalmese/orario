@@ -176,7 +176,11 @@ Le parti del progetto:
   40×ore/18 (O.M. 446/1997 art. 7 c. 7); formazione obbligatoria (sicurezza, privacy) a parte, nelle ore che restano delle 80.
   Le spunte «Visibile» si scrivono nel Foglio e si pubblicano subito: `quaranta-ore.json` nella `cartellaImpegni`, SOLO codici e solo
   i docenti abilitati; nell'app la voce di menu «Le mie 40+40» (`#btn40ore`, `controlla40()` in app.js) compare al docente il cui codice
-  c'è nel file e mostra solo le sue. «Scarica estratto» crea per ogni scuola di completamento un Excel (`orario-facile/xlsx.js`, che usa
+  c'è nel file e mostra solo le sue (sezione **«Il mio servizio»** del menu, solo per il docente riconosciuto dall'email).
+  Nella stessa sezione **«Le mie sostituzioni»** (`app/js/storico-sostituzioni.js`): registro di tutto l'anno
+  `sostituzioni-docenti.json` nella `cartellaImpegni` (solo data, ora, nome della classe, CODICE di chi ha sostituito e
+  «senza ore in più»; mai il docente assente), aggiornato in sottofondo da `PubblicaSostituzioni.unisciEPubblica` a ogni
+  pubblicazione (aggiunge le nuove, toglie le annullate e, nelle ultime due settimane, quelle sparite dal file pubblicato). «Scarica estratto» crea per ogni scuola di completamento un Excel (`orario-facile/xlsx.js`, che usa
   `Docx.zip`) con i soli docenti in comune: riepilogo, piano con le righe evidenziate, un foglio per docente.
 - **Vigilanza durante l'intervallo** (idea discussa il 29/09/2026, non ancora fatta): all'inizio dell'intervallo le classi
   si spostano; l'insegnante uscente resta nella sua aula e vigila la classe che vi entra (2ª ora → classe della 3ª per

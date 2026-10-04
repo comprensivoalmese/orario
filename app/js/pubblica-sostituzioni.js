@@ -46,7 +46,9 @@ const PubblicaSostituzioni = (() => {
       registro: leggiLocale('sostituzioni.registro', []).filter(s => recente(s) && !s.sciopero)
         .map(s => Object.assign({ id: s.id, data: s.data, ora: s.ora, classe: s.classe, assente: s.assente, sostituto: s.sostituto,
           nelFoglio: !!s.nelFoglio, nelRegistro: !!s.nelRegistro, riportata: !!s.riportata },
-          s.spostato && s.spostato.da ? { spostato: { da: s.spostato.da } } : {})),
+          s.spostato && s.spostato.da ? { spostato: { da: s.spostato.da } } : {},
+          // reindirizzato: docente liberato da un'uscita didattica (nessuna ora in più), serve allo storico (storico-sostituzioni.js)
+          s.reindirizzato ? { reindirizzato: true } : {})),
       // cambi d'aula (sostituzioni/js/cambi-aula.js): senza il motivo, che è testo libero
       cambi: leggiLocale('sostituzioni.cambiAula', []).filter(recente)
         .map(c => ({ id: c.id, data: c.data, ora: c.ora, classe: c.classe, da: c.da, a: c.a, docente: c.docente })),
@@ -201,6 +203,8 @@ const PubblicaSostituzioni = (() => {
       assenzeAnnullate
     };
     await PubblicaDrive.pubblicaSostituzioni(JSON.stringify(unito), email);
+    // il registro di tutto l'anno per «Le mie sostituzioni» (cartella dei soli docenti): in sottofondo, non blocca mai
+    if (typeof StoricoSostituzioni !== 'undefined') StoricoSostituzioni.aggiorna(unito, daQuando(), email);
     scriviLocale(CHIAVE_DA_QUI, [...idLocali]);
     scriviLocale(CHIAVE_FIRMA, firma(L));
     return { assenze: unito.assenze.length, registro: unito.registro.length, cambi: unito.cambi.length };

@@ -615,6 +615,7 @@
   let mie40 = null, letto40 = false, lettura40 = false;
   const codice40 = () => mioDocente ? String(mioDocente.codice || mioDocente.nome || '').trim().toUpperCase() : '';
   function controlla40() {
+    aggiornaMioServizio();
     if (!utente || !codice40() || aulaMonitor || secondiIngresso || letto40 || lettura40 || typeof QuarantaOre === 'undefined') return;
     lettura40 = true;
     QuarantaOre.leggiPubblicato(utente.email, true)
@@ -627,8 +628,27 @@
       .catch(() => { letto40 = true; })
       .finally(() => { lettura40 = false; });
   }
+  /*
+    «Le mie sostituzioni» (js/storico-sostituzioni.js): per ogni docente riconosciuto, le sostituzioni fatte nell'anno
+    (registro nella cartella dei soli docenti). Usa la stessa finestra delle 40+40, con un altro titolo.
+  */
+  function apriMieSostituzioni() {
+    chiudiMenu();
+    const box = $('#contenuto40ore');
+    $('#titolo40ore').textContent = 'Le mie sostituzioni';
+    box.innerHTML = '<p>Carico il registro delle sostituzioni…</p>';
+    $('#finestra40ore').showModal();
+    StoricoSostituzioni.mie(codice40(), utente.email)
+      .then(m => { box.innerHTML = StoricoSostituzioni.html(m); })
+      .catch(e => { box.innerHTML = `<p>Non riesco a leggere il registro (${Viste.esc(e.message || e)}). Riprova tra poco.</p>`; });
+  }
+  function aggiornaMioServizio() {
+    $('#btnMieSostituzioni').hidden = !utente || !codice40() || !!aulaMonitor || !!secondiIngresso || typeof StoricoSostituzioni === 'undefined';
+  }
+
   function apri40() {
     chiudiMenu();
+    $('#titolo40ore').textContent = 'Le mie 40+40';
     const box = $('#contenuto40ore');
     const mostra = () => { box.innerHTML = mie40 ? QuarantaOre.htmlDocente(mie40.dati, mie40.aggiornato) : '<p>Le tue 40+40 non sono (più) visibili.</p>'; };
     mostra();
@@ -792,6 +812,7 @@
     $('#menoSecondi').addEventListener('click', () => impostaSecondi(Math.max(5, (Math.ceil(secondiIngresso / 5) - 1) * 5)));
     $('#piuSecondi').addEventListener('click', () => impostaSecondi(Math.min(600, (Math.floor(secondiIngresso / 5) + 1) * 5)));
     $('#btn40ore').addEventListener('click', apri40);
+    $('#btnMieSostituzioni').addEventListener('click', apriMieSostituzioni);
     $('#btnChiudi40ore').addEventListener('click', () => $('#finestra40ore').close());
     $('#btnSchermoIntero').addEventListener('click', () => {
       document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
