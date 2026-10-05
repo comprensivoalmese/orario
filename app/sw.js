@@ -4,11 +4,11 @@
 */
 // Nome della memoria dell'app: cambiandolo (per esempio con la data) i dispositivi buttano la copia vecchia
 // e scaricano tutto da capo. Tenerlo uguale a "versioneApp" in js/config.js.
-const CACHE = 'orario-dada-2026-10-05.1';
+const CACHE = 'orario-dada-2026-10-05.2';
 const FILE_APP = [
   './', 'index.html', 'manuale.html', 'css/app.css', 'css/brief.css', 'css/campanella.css', 'css/barra.css', 'css/smart.css', 'css/piantine.css', 'css/menu.css', 'css/avviso-per-te.css', 'css/calendario.css', 'manifest.webmanifest',
   'js/config.js', 'js/tema.js', 'js/dati.js', 'js/accesso.js', 'js/ruoli.js', 'js/nomi.js', 'js/autorizzazioni.js', 'js/supplenze.js', 'js/compresenze.js', 'js/piantine.js', 'js/viste.js', 'js/brief.js', 'js/smart.js', 'js/piano-attivita.js', 'js/impegni-drive.js', 'js/calendario.js', '../sostituzioni/js/docx.js', 'js/xlsx.js', 'js/quaranta-ore.js', 'js/storico-sostituzioni.js', '../sostituzioni/js/foglio.js', 'js/ingresso.js', 'js/intervallo.js', 'js/modifiche.js', 'js/storie.js', 'js/campanella.js', 'js/installa.js', 'js/condividi.js', 'js/avviso-per-te.js', 'js/pubblica-drive.js', 'js/pubblica-sostituzioni.js', 'js/app.js',
-  'icone/icona.svg', 'icone/icona-192.png', 'icone/apple-touch-icon.png', 'icone/qr-app.svg',
+  'icone/icona.svg', 'icone/favicon.svg', 'icone/icona-192.png', 'icone/apple-touch-icon.png', 'icone/qr-app.svg',
   '../dati/orario.json', '../dati/campanella.json'
 ];
 

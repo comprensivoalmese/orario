@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" shape-rendering="crispEdges">
+<!-- Icona per la scheda del browser: solo il robottino di Luis@i, ingrandito (la scritta a 16 pixel non si leggerebbe) -->
+  <defs>
+    <linearGradient id="sfondo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6fe0"/><stop offset="1" stop-color="#153c8f"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#sfondo)"/>
+  <g transform="translate(40 32) scale(27)">
+  <!-- antenne: bastoncini bianchi e palline gialle -->
+  <rect x="3" y="2" width="1" height="1" fill="#ffffff"/>
+  <rect x="12" y="2" width="1" height="1" fill="#ffffff"/>
+  <rect x="4" y="3" width="1" height="1" fill="#ffffff"/>
+  <rect x="11" y="3" width="1" height="1" fill="#ffffff"/>
+  <rect x="1" y="0" width="2" height="2" fill="#ffcf3f"/>
+  <rect x="13" y="0" width="2" height="2" fill="#ffcf3f"/>
+  <!-- corpo, con le braccine -->
+  <rect x="3" y="4" width="10" height="1" fill="#ffffff"/>
+  <rect x="2" y="5" width="12" height="4" fill="#ffffff"/>
+  <rect x="3" y="9" width="10" height="1" fill="#ffffff"/>
+  <rect x="1" y="10" width="14" height="2" fill="#ffffff"/>
+  <rect x="3" y="12" width="10" height="3" fill="#ffffff"/>
+  <!-- occhi a stanghetta -->
+  <rect x="5" y="6" width="1" height="2" fill="#10275a"/>
+  <rect x="10" y="6" width="1" height="2" fill="#10275a"/>
+  <!-- orologio sulla pancia -->
+  <rect x="6" y="10" width="4" height="1" fill="#ffcf3f"/>
+  <rect x="5" y="11" width="6" height="2" fill="#ffcf3f"/>
+  <rect x="6" y="13" width="4" height="1" fill="#ffcf3f"/>
+  <!-- lancette (segnano le tre) -->
+  <rect x="7" y="11" width="1" height="1" fill="#10275a"/>
+  <rect x="7" y="12" width="3" height="1" fill="#10275a"/>
+  <!-- piedi -->
+  <rect x="3" y="15" width="3" height="1" fill="#ffcf3f"/>
+  <rect x="10" y="15" width="3" height="1" fill="#ffcf3f"/>
+  </g>
+</svg>
