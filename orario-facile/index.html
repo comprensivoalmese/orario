@@ -5,12 +5,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>
+  // Tema di Orario Facile: SCURO per tutti; chiaro solo per chi lo sceglie con il tasto ☀/☾ (chiave orariofacile.tema = 'light').
+  // Si imposta qui, prima degli stili, così la pagina (anche la porta d'ingresso) non lampeggia in chiaro mentre si carica.
+  try { document.documentElement.setAttribute('data-theme', localStorage.getItem('orariofacile.tema') === 'light' ? 'light' : 'dark'); }
+  catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+</script>
 
 <style>
 :root{color-scheme:light dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 html,body{margin:0}
 img{max-width:100%}
 [hidden]{display:none!important}
+/* menu a tendina, barre di scorrimento e caselle seguono il tema scelto, non quello del computer */
+:root[data-theme="dark"]{color-scheme:dark}
+:root[data-theme="light"]{color-scheme:light}
 </style>
 <title>Orario Facile</title>
 <!-- Icona per iPhone/iPad ("Aggiungi alla schermata Home") -->
@@ -308,7 +317,7 @@ td input[type=number]{width:64px}
     <!-- apre l'app di visualizzazione: legge questo orario dal browser e si aggiorna in tempo reale -->
     <a class="btn ghost sm" href="../app/" target="orariodada" style="text-decoration:none" title="Vedi nell'app">📱 <span class="etichetta">Vedi nell'app</span></a>
     <a class="btn ghost sm" href="manuale.html" style="text-decoration:none" title="Manuale per i modificatori («Chiudi manuale» riporta qui)">📖 <span class="etichetta">Manuale</span></a>
-    <button class="btn ghost sm" id="btnTema" title="Chiaro / scuro">◐ <span class="etichetta">Tema</span></button>
+    <button class="btn ghost sm" id="btnTema" title="Tema scuro: tocca per passare al chiaro">☾ <span class="etichetta">Scuro</span></button>
     <button class="btn ghost sm" id="btnNomi" title="Mostra i nomi veri dei docenti al posto dei codici (serve il permesso sul file riservato in Google Drive)">👁 <span class="etichetta">Nomi</span></button>
     <!-- azioni che si usano di rado (e «Azzera tutto», che cancella): stanno in un menu a tendina per non sbagliare -->
     <details class="altro">
@@ -3258,22 +3267,23 @@ const APERTI = new Set();
 let DRAG = null;
 let POOL_SEL = null;   // ora del pool selezionata con un clic, in attesa della casella di destinazione
 
-/* ---- tema ---- */
+/* ---- tema ----
+   In Orario Facile il tema predefinito è SCURO (scelta della scuola, 05/10/2026): il tasto ☾/☀ passa al chiaro e ritorno.
+   La scelta si ricorda su questo dispositivo (chiave orariofacile.tema); un vecchio valore «auto» vale come scuro.
+   Lo script in cima alla pagina applica il tema prima che compaia qualcosa. */
 function applicaTema(t){
-  if(t==='auto') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', t);
+  document.documentElement.setAttribute('data-theme', t);
   try{ localStorage.setItem('orariofacile.tema', t); }catch(e){}
+  const b = $('#btnTema');
+  if(t==='light'){ scrittaTasto(b, '☀', 'Chiaro'); b.title = 'Tema chiaro: tocca per passare allo scuro'; }
+  else { scrittaTasto(b, '☾', 'Scuro'); b.title = 'Tema scuro: tocca per passare al chiaro'; }
 }
-function temaCorrente(){ try{ return localStorage.getItem('orariofacile.tema')||'auto'; }catch(e){ return 'auto'; } }
+function temaCorrente(){ try{ return localStorage.getItem('orariofacile.tema')==='light' ? 'light' : 'dark'; }catch(e){ return 'dark'; } }
 
 /* ---- barra superiore ---- */
 // Scrive un tasto della barra come «icona + scritta»: sul telefono si vede solo l'icona (la scritta resta per i lettori di schermo)
 function scrittaTasto(b, icona, testo){ b.innerHTML = `${icona} <span class="etichetta">${esc(testo)}</span>`; }
-$('#btnTema').addEventListener('click', () => {
-  const ordine = ['auto','light','dark'], t = ordine[(ordine.indexOf(temaCorrente())+1) % 3];
-  applicaTema(t);
-  if(t==='auto') scrittaTasto($('#btnTema'), '◐', 'Tema'); else if(t==='light') scrittaTasto($('#btnTema'), '☀', 'Chiaro'); else scrittaTasto($('#btnTema'), '☾', 'Scuro');
-});
+$('#btnTema').addEventListener('click', () => applicaTema(temaCorrente()==='light' ? 'dark' : 'light'));
 // «👁 Nomi»: mostra o nasconde i nomi veri, letti dal file riservato su Drive e tenuti solo in memoria
 $('#btnNomi').addEventListener('click', async () => {
   const b = $('#btnNomi');
