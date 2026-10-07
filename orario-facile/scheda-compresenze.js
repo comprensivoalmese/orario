@@ -445,16 +445,16 @@ const SchedaCompresenze = (() => {
   const TITOLI_ALT = ['Codice docente', 'Docente'].concat(GIORNI_ALT, ['Nessuna disponibilità (SI/NO)', 'Esclusioni negli anni passati', 'Classi dell\'anno scorso', 'Punteggio graduatoria']);
   const SCHEDA_ALT = 'Disponibilità Alternativa';
   const CHIAVE_PREF_ALT = 'orariofacile.alternativa';
-  let alt = { dispo: [], nelFoglio: false, bozza: null, criteri: Alternativa.CRITERI.map(c => ({ id: c.id, attivo: true })), limite: '', salgono: true, alta: true };
+  let alt = { dispo: [], nelFoglio: false, bozza: null, criteri: Alternativa.CRITERI.map(c => ({ id: c.id, attivo: true })), limite: '', salgono: true, alta: true, risposte: '' };
   try {
     const p = JSON.parse(localStorage.getItem(CHIAVE_PREF_ALT) || 'null');
     if (p && Array.isArray(p.criteri)) {
       const noti = p.criteri.filter(c => Alternativa.CRITERI.some(x => x.id === c.id));
       alt.criteri = noti.concat(Alternativa.CRITERI.filter(x => !noti.some(c => c.id === x.id)).map(x => ({ id: x.id, attivo: true })));
-      alt.limite = p.limite || ''; alt.salgono = p.salgono !== false; alt.alta = p.alta !== false;
+      alt.limite = p.limite || ''; alt.salgono = p.salgono !== false; alt.alta = p.alta !== false; alt.risposte = p.risposte || '';
     }
   } catch (e) { /* senza memoria si parte dalle impostazioni proposte */ }
-  const salvaPrefAlt = () => { try { localStorage.setItem(CHIAVE_PREF_ALT, JSON.stringify({ criteri: alt.criteri, limite: alt.limite, salgono: alt.salgono, alta: alt.alta })); } catch (e) { /* va bene lo stesso */ } };
+  const salvaPrefAlt = () => { try { localStorage.setItem(CHIAVE_PREF_ALT, JSON.stringify({ criteri: alt.criteri, limite: alt.limite, salgono: alt.salgono, alta: alt.alta, risposte: alt.risposte })); } catch (e) { /* va bene lo stesso */ } };
 
   const fileAlt = () => CONFIG.fileAlternativa || CONFIG.fileCompresenze;
   async function chiamaAlt(t, percorso, opzioni) {
@@ -558,20 +558,41 @@ const SchedaCompresenze = (() => {
     messaggio = `Bozza applicata: ${n} ore scritte qui sopra. Controllale e premi «Salva sul Foglio».`;
   }
 
+  // Unisce le disponibilità lette (da file o dal Foglio delle risposte) a quelle che ci sono già: chi c'era resta con i suoi dati dei criteri
+  function altUnisci(tabelle) {
+    const nomi = ctx.nomi && ctx.nomi();
+    if (!nomi) { messaggio = '⚠️ Per riconoscere i docenti premi prima «👁 Nomi» in alto: i nomi veri restano solo in memoria.'; return; }
+    const lette = Alternativa.leggiDisponibilita(tabelle);
+    const vecchi = new Map(alt.dispo.map(x => [semplice(x.nome), x]));
+    let nuovi = 0, cambiati = 0;
+    const chiave = x => GIORNI_ALT.map(g => x.giorni[g] || '').join('|') + (x.nessuna ? '|N' : '');
+    alt.dispo = lette.map(x => {
+      const v = vecchi.get(semplice(x.nome));
+      if (!v) nuovi++; else if (chiave(v) !== chiave(x)) cambiati++;
+      return { codice: Alternativa.codiceDaNome(x.nome, nomi) || (v ? v.codice : ''), nome: x.nome, giorni: x.giorni, nessuna: x.nessuna,
+        escl: v ? v.escl : '', classiPrima: v ? v.classiPrima : '', punteggio: v ? v.punteggio : '' };
+    });
+    alt.bozza = null; modificato = true;
+    const senza = alt.dispo.filter(x => !x.codice).length;
+    messaggio = `Disponibilità lette: ${alt.dispo.length} docenti` + (vecchi.size ? ` (${nuovi} nuovi, ${cambiati} cambiate)` : '') +
+      (senza ? `, ${senza} da riconoscere (scegli il docente nell'elenco)` : ', tutti riconosciuti') + '. Premi «Salva sul Foglio» per tenerle.';
+  }
   async function altImporta(file) {
+    try { altUnisci(await Foglio.leggiTabelle(file)); } catch (e) { messaggio = '⚠️ ' + String(e && e.message || e); }
+    disegna();
+  }
+  // il Foglio Google delle risposte del modulo (link o ID): si rilegge quando arrivano nuove risposte, senza scaricare il file
+  const idFoglio = testo => { const m = /\/d\/([A-Za-z0-9_-]{20,})/.exec(String(testo || '')) || /^([A-Za-z0-9_-]{25,})$/.exec(String(testo || '').trim()); return m ? m[1] : ''; };
+  async function altDaFoglio() {
+    const id = idFoglio(alt.risposte);
+    if (!id) { messaggio = '⚠️ Incolla il link del Foglio Google delle risposte del modulo.'; disegna(); return; }
+    messaggio = 'Leggo il Foglio delle risposte…'; disegna();
     try {
-      const nomi = ctx.nomi && ctx.nomi();
-      if (!nomi) { messaggio = '⚠️ Per riconoscere i docenti premi prima «👁 Nomi» in alto: i nomi veri restano solo in memoria.'; disegna(); return; }
-      const lette = Alternativa.leggiDisponibilita(await Foglio.leggiTabelle(file));
-      const vecchi = new Map(alt.dispo.map(x => [semplice(x.nome), x]));
-      alt.dispo = lette.map(x => {
-        const v = vecchi.get(semplice(x.nome));
-        return { codice: Alternativa.codiceDaNome(x.nome, nomi) || (v ? v.codice : ''), nome: x.nome, giorni: x.giorni, nessuna: x.nessuna,
-          escl: v ? v.escl : '', classiPrima: v ? v.classiPrima : '', punteggio: v ? v.punteggio : '' };
-      });
-      alt.bozza = null; modificato = true;
-      const senza = alt.dispo.filter(x => !x.codice).length;
-      messaggio = `Disponibilità lette: ${alt.dispo.length} docenti` + (senza ? `, ${senza} da riconoscere (scegli il docente nell'elenco)` : ', tutti riconosciuti') + '. Premi «Salva sul Foglio» per tenerle.';
+      const t = await NomiDocenti.gettone(permessi(), ctx.email());
+      const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(id) + '/values/' + encodeURIComponent('A1:Z500'), { headers: { Authorization: 'Bearer ' + t } });
+      if (!r.ok) throw new Error(r.status === 403 || r.status === 404 ? 'non riesco ad aprire il Foglio delle risposte: controlla il link e che il tuo account lo possa leggere' : spiega(r.status, await r.text()));
+      altUnisci([{ nome: 'Risposte', righe: (await r.json()).values || [] }]);
+      salvaPrefAlt();
     } catch (e) { messaggio = '⚠️ ' + String(e && e.message || e); }
     disegna();
   }
@@ -634,6 +655,10 @@ const SchedaCompresenze = (() => {
       `e poi puoi simulare una prima copertura delle ${scoperte} ore ancora senza docente. I nomi restano solo su Drive.</p>` +
       `<div class="row comp-azioni"><label class="btn alt-file">📥 Carica le disponibilità (.xlsx, .ods, .csv)<input type="file" accept=".xlsx,.ods,.csv" data-alfile hidden></label>` +
       (alt.dispo.length ? `<span class="tag${buone === tutte.length ? ' ok' : ''}">${alt.dispo.length} docenti · ${buone} ore su ${tutte.length} nell'elenco</span>` : '') + `</div>` +
+      // per i prossimi aggiornamenti: si rilegge direttamente il Foglio Google delle risposte del modulo, senza scaricare nulla
+      `<div class="comp-campi alt-risposte"><label class="fl comp-campo comp-note">Foglio Google delle risposte del modulo (link): per aggiornare quando arrivano nuove risposte` +
+      `<input type="text" data-alopz="risposte" value="${esc(alt.risposte)}" placeholder="https://docs.google.com/spreadsheets/d/…"></label>` +
+      `<button type="button" class="btn" data-azione="alt-foglio">🔄 Aggiorna dal Foglio</button></div>` +
       (alt.dispo.length ? `<ol class="comp-righe">${righeDoc}</ol>` : '<p class="hint">Nessuna disponibilità caricata.</p>') +
       (alt.dispo.length ? `<h4>Criteri della simulazione</h4><p class="hint">Spunta quelli da usare e mettili in ordine: il primo conta più del secondo, e così via. Prima di tutto si copre il maggior numero di ore possibile.</p>` +
         `<ol class="alt-criteri">${criteri}</ol>` +
@@ -651,6 +676,7 @@ const SchedaCompresenze = (() => {
     disegna();
   }
   function cambioAltOpzione(el) {
+    if (el.dataset.alopz === 'risposte') { alt.risposte = el.value.trim(); salvaPrefAlt(); return; }   // solo il link: niente da ridisegnare
     if (el.dataset.alcrit !== undefined) alt.criteri[Number(el.dataset.alcrit)].attivo = el.checked;
     else if (el.dataset.alopz === 'limite') alt.limite = el.value === '' ? '' : String(Math.max(1, parseInt(el.value, 10) || 1));
     else if (el.dataset.alopz === 'alta') alt.alta = el.value === '1';
@@ -659,6 +685,7 @@ const SchedaCompresenze = (() => {
   }
   function clicAlt(azione, b) {
     const g = gruppi().find(eAlternativa);
+    if (azione === 'alt-foglio') { altDaFoglio(); return; }   // si ridisegna da sola a lettura finita
     if (azione === 'alt-simula' && g) altSimula(g);
     else if (azione === 'alt-applica' && g) altApplica(g);
     else if (azione === 'alt-scarta') alt.bozza = null;

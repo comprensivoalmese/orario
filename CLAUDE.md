@@ -54,7 +54,8 @@ Le parti del progetto:
   Un gruppo con «nelle ore di» una materia (Alternativa → Religione) conta da solo le ore previste nell'orario.
   **Alternativa: disponibilità e bozza di copertura** (dal 07/10/2026, riquadro dentro il gruppo Alternativa della scheda 8;
   calcoli in `orario-facile/alternativa.js`, interfaccia in `scheda-compresenze.js`): «Carica le disponibilità» legge il file delle
-  risposte del modulo (Cognome e Nome, giorni con le ore «3, 4, 6», «Oppure: Nessuna disponibilità»; serve «👁 Nomi» per riconoscere i
+  risposte del modulo, da file oppure direttamente dal Foglio Google delle risposte (link nel riquadro + «🔄 Aggiorna dal Foglio»: chi
+  c'era tiene i suoi dati dei criteri, il link si ricorda sul dispositivo) (Cognome e Nome, giorni con le ore «3, 4, 6», «Oppure: Nessuna disponibilità»; serve «👁 Nomi» per riconoscere i
   docenti dal nome, `ctx.nomi()`), le salva nella scheda **«Disponibilità Alternativa»** del Foglio (`CONFIG.fileAlternativa`, vuoto =
   Foglio Compresenze; nomi veri e punteggi: solo su Drive) e controlla ogni ora: «nell'elenco» = per quel giorno e ora c'è una classe con
   Religione dove il docente è libero e non è della classe (`motivoLibero`, la stessa regola della tendina). «▶ Simula la copertura»
