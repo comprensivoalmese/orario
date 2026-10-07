@@ -73,3 +73,6 @@
 .comp-testata h3::before { content: '▾ '; color: var(--text-3); }
 .comp-contrai:not([open]) > .comp-testata h3::before { content: '▸ '; }
 .comp-testata::-webkit-details-marker { display: none; }
+.alt-riga-bozza { gap: 6px 8px; }
+.alt-riga-bozza select { max-width: 100%; }
+.alt-modifiche { gap: 6px; margin: 6px 0; }

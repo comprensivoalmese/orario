@@ -491,7 +491,7 @@ const SchedaCompresenze = (() => {
   const TITOLI_ALT = ['Codice docente', 'Docente'].concat(GIORNI_ALT, ['Nessuna disponibilità (SI/NO)', 'Esclusioni negli anni passati', 'Classi dell\'anno scorso', 'Punteggio graduatoria']);
   const SCHEDA_ALT = 'Disponibilità Alternativa';
   const CHIAVE_PREF_ALT = 'orariofacile.alternativa';
-  let alt = { dispo: [], nelFoglio: false, bozza: null, criteri: Alternativa.CRITERI.map(c => ({ id: c.id, attivo: true })), limite: '', salgono: true, alta: true, risposte: '', escludi: true, pieno: 18, usaTetto: true, tetto: 24 };
+  let alt = { dispo: [], nelFoglio: false, bozza: null, criteri: Alternativa.CRITERI.map(c => ({ id: c.id, attivo: true })), limite: '', salgono: true, alta: true, risposte: '', escludi: true, pieno: 18, usaTetto: true, tetto: 24, vincoli: { fissi: {}, vietati: [], esclusi: [] } };
   try {
     const p = JSON.parse(localStorage.getItem(CHIAVE_PREF_ALT) || 'null');
     if (p && Array.isArray(p.criteri)) {
@@ -511,7 +511,7 @@ const SchedaCompresenze = (() => {
     return r.json();
   }
   async function caricaAlt(t) {
-    alt.dispo = []; alt.nelFoglio = false; alt.bozza = null;
+    alt.dispo = []; alt.nelFoglio = false; alt.bozza = null; alt.vincoli = { fissi: {}, vietati: [], esclusi: [] };
     try {
       const j = await chiamaAlt(t, '/values/' + encodeURIComponent("'" + SCHEDA_ALT + "'!A1:K200"));
       alt.nelFoglio = true;
@@ -607,11 +607,52 @@ const SchedaCompresenze = (() => {
   // perché il docente è escluso dalla simulazione (cattedra esterna o part time), oppure ''
   const altMotivoEscluso = (o, e) => !e || !alt.escludi || o.piena >= alt.pieno ? ''
     : o.piena === 0 ? 'nessuna cattedra nell\'orario (potenziamento, sostegno…)' : `cattedra di ${o.piena} ore: COE o part time`;
+  /*
+    Calcola la bozza tenendo conto delle modifiche fatte a mano (alt.vincoli):
+      esclusi  – docenti tolti da tutta la bozza;
+      vietati  – coppie «ora#docente» da non fare (il docente non può stare in quell'ora);
+      fissi    – ore decise a mano: ora → docente (oppure null = lasciata scoperta). Non entrano nel calcolo: contano come ore già
+                 del docente (limite, tetto, equilibrio) e il docente non può stare altrove nella stessa ora.
+    Poi ricalcola tutto il resto.
+  */
   function altSimula(g) {
-    const dati = altDatiSimulazione(g);
-    const ris = Alternativa.simula({ slots: dati.aperti, docenti: dati.docenti, ordine: alt.criteri.filter(c => c.attivo).map(c => c.id), limite: alt.limite, graduatoriaAlta: alt.alta });
-    alt.bozza = { ris, aperti: dati.aperti, docenti: dati.docenti, esclusi: dati.esclusi };
+    const dati = altDatiSimulazione(g), v = alt.vincoli;
+    const fissi = Object.keys(v.fissi).filter(id => dati.aperti.some(s => s.id === id));
+    const docenti = dati.docenti.filter(d => !v.esclusi.includes(d.codice)).map(d => Object.assign({}, d, { ok: d.ok.filter(id => !v.vietati.includes(id + '#' + d.codice)) }));
+    fissi.forEach(id => {
+      const s = dati.aperti.find(x => x.id === id), d = v.fissi[id] && docenti.find(x => x.codice === v.fissi[id]);
+      if (!d) return;
+      d.gia = (d.gia || 0) + 1;
+      d.ok = d.ok.filter(o => { const t = dati.aperti.find(z => z.id === o); return t && !(t.giorno === s.giorno && t.ora === s.ora); });
+    });
+    const ris = Alternativa.simula({ slots: dati.aperti.filter(s => !fissi.includes(s.id)), docenti, ordine: alt.criteri.filter(c => c.attivo).map(c => c.id), limite: alt.limite, graduatoriaAlta: alt.alta });
+    fissi.forEach(id => {
+      if (v.fissi[id]) ris.assegnazioni.push({ slotId: id, codice: v.fissi[id], fisso: true });
+      else ris.scoperte.push(id);
+    });
+    ris.contenti = [...new Set(ris.assegnazioni.map(a => a.codice))];
+    const manuali = dati.docenti.filter(d => v.esclusi.includes(d.codice)).map(d => ({ codice: d.codice, motivo: 'tolto da te' }));
+    alt.bozza = { ris, aperti: dati.aperti, docenti: dati.docenti, esclusi: dati.esclusi.concat(manuali) };
     messaggio = '';
+  }
+  // una modifica a mano: la applica e ricalcola tutto
+  function altModifica(azione, el, g) {
+    const v = alt.vincoli, b = alt.bozza; if (!b) return;
+    const s = el.dataset.s !== undefined ? b.aperti[Number(el.dataset.s)] : null;
+    const togli = (arr, x) => { const i = arr.indexOf(x); if (i >= 0) arr.splice(i, 1); };
+    if (azione === 'fisso' && s) {   // «sposta»: sceglie un altro docente per quest'ora (o la lascia scoperta, o torna all'automatico)
+      const val = el.value;
+      if (val === '__auto') delete v.fissi[s.id];
+      else { v.fissi[s.id] = val || null; if (val) { togli(v.esclusi, val); togli(v.vietati, s.id + '#' + val); } }
+    } else if (azione === 'alt-vieta' && s) {   // «togli da quest'ora»
+      const c = el.dataset.cod; delete v.fissi[s.id]; if (!v.vietati.includes(s.id + '#' + c)) v.vietati.push(s.id + '#' + c);
+    } else if (azione === 'alt-escludi') {   // «togli da tutta la bozza»
+      const c = el.dataset.cod; if (!v.esclusi.includes(c)) v.esclusi.push(c);
+      Object.keys(v.fissi).forEach(id => { if (v.fissi[id] === c) delete v.fissi[id]; });
+    } else if (azione === 'alt-ripristina') {
+      if (el.dataset.k === 'e') togli(v.esclusi, el.dataset.v); else togli(v.vietati, el.dataset.v);
+    } else if (azione === 'alt-azzera') alt.vincoli = { fissi: {}, vietati: [], esclusi: [] };
+    altSimula(g);
   }
   function altApplica(g) {
     if (!alt.bozza) return;
@@ -623,7 +664,7 @@ const SchedaCompresenze = (() => {
       else righe.push({ codice: a.codice, classe: s.classe, giorno: s.giorno, ora: s.ora, tipo: g.tipo, aula: '', note: '', nome: '' });
       n++;
     });
-    alt.bozza = null; modificato = true;
+    alt.bozza = null; modificato = true; alt.vincoli = { fissi: {}, vietati: [], esclusi: [] };
     messaggio = `Bozza applicata: ${n} ore scritte qui sopra. Controllale e premi «Salva sul Foglio».`;
   }
 
@@ -641,7 +682,7 @@ const SchedaCompresenze = (() => {
       return { codice: Alternativa.codiceDaNome(x.nome, nomi) || (v ? v.codice : ''), nome: x.nome, giorni: x.giorni, nessuna: x.nessuna,
         escl: v ? v.escl : '', classiPrima: v ? v.classiPrima : '', punteggio: v ? v.punteggio : '' };
     });
-    alt.bozza = null; modificato = true;
+    alt.bozza = null; modificato = true; alt.vincoli = { fissi: {}, vietati: [], esclusi: [] };
     const senza = alt.dispo.filter(x => !x.codice).length;
     messaggio = `Disponibilità lette: ${alt.dispo.length} docenti` + (vecchi.size ? ` (${nuovi} nuovi, ${cambiati} cambiate)` : '') +
       (senza ? `, ${senza} da riconoscere (scegli il docente nell'elenco)` : ', tutti riconosciuti') + '. Premi «Salva sul Foglio» per tenerle.';
@@ -722,23 +763,36 @@ const SchedaCompresenze = (() => {
     let bozza = '';
     if (alt.bozza) {
       const b = alt.bozza, ris = b.ris, daSlot = new Map(ris.assegnazioni.map(a => [a.slotId, a.codice]));
-      const righeB = b.aperti.map(s => {
-        const c = daSlot.get(s.id), d = c && b.docenti.find(x => x.codice === c);
+      const v = alt.vincoli;
+      const righeB = b.aperti.map((s, k) => {
+        const c = daSlot.get(s.id), fisso = Object.prototype.hasOwnProperty.call(v.fissi, s.id), d = c && b.docenti.find(x => x.codice === c);
         const note = [];
         if (d && Alternativa.classiDiOggi(alt.dispo.find(x => x.codice === c).classiPrima, alt.salgono).includes(semplice(s.classe))) note.push('riprende la classe');
         if (d && /^\s*l\.?\s*104/i.test(String(d.punteggio))) note.push('precedenza L. 104');
         if (d && Alternativa.numero(d.escl) > 0) note.push(`escluso ${Alternativa.numero(d.escl)} ${Alternativa.numero(d.escl) === 1 ? 'volta' : 'volte'}`);
-        const candidati = b.docenti.filter(x => x.ok.includes(s.id)).length;
-        return `<li class="comp-riga ${c ? '' : 'con-avvisi'}"><b>${esc(s.giorno)} ${s.ora}ª · ${esc(s.classe)}</b> → ` +
-          (c ? `${esc(nomeAlt(c))} <span class="tag">${esc(c)}</span>${note.map(n => ` <span class="tag ok">${esc(n)}</span>`).join('')}`
-             : `<span class="comp-avviso">nessun docente${candidati ? '' : ' disponibile'}</span>`) + `</li>`;
+        // i docenti che possono stare in quest'ora: si può sceglierne un altro (la scelta resta ferma e il resto si ricalcola)
+        const candidati = b.docenti.filter(x => x.ok.includes(s.id)).sort((p, q) => nomeAlt(p.codice).localeCompare(nomeAlt(q.codice), 'it'));
+        const opz = `<option value="__auto"${!fisso && !c ? ' selected' : ''}>↺ automatico</option><option value=""${fisso && !c ? ' selected' : ''}>— lascia scoperta —</option>` +
+          candidati.map(x => `<option value="${esc(x.codice)}"${x.codice === c ? ' selected' : ''}>${esc(nomeAlt(x.codice))}${v.esclusi.includes(x.codice) ? ' (tolto)' : ''}</option>`).join('');
+        return `<li class="comp-riga ${c ? '' : 'con-avvisi'}"><div class="row alt-riga-bozza"><b>${esc(s.giorno)} ${s.ora}ª · ${esc(s.classe)}</b> → ` +
+          `<select data-alfisso="${k}" data-s="${k}" aria-label="Docente per ${esc(s.giorno)} ${s.ora}ª ${esc(s.classe)}">${opz}</select>` +
+          (fisso ? '<span class="tag">🔒 scelto da te</span>' : '') + note.map(n => `<span class="tag ok">${esc(n)}</span>`).join('') +
+          (c && !fisso ? `<button type="button" class="iconbtn" data-azione="alt-vieta" data-s="${k}" data-cod="${esc(c)}" title="Togli ${esc(nomeAlt(c))} da quest'ora e ricalcola" aria-label="Togli ${esc(nomeAlt(c))} da quest'ora">✕</button>` : '') +
+          (c ? `<button type="button" class="iconbtn" data-azione="alt-escludi" data-cod="${esc(c)}" title="Togli ${esc(nomeAlt(c))} da tutta la bozza e ricalcola" aria-label="Togli ${esc(nomeAlt(c))} da tutta la bozza">⛔</button>` : '') +
+          (!c ? `<span class="comp-avviso">${candidati.length ? 'nessuno assegnato' : 'nessun docente disponibile'}</span>` : '') + `</div></li>`;
       }).join('');
+      // le modifiche fatte a mano, con il modo di annullarle
+      const nomeDi2 = c => esc(nomeAlt(c));
+      const manuali = v.esclusi.map(c => `<span class="tag">⛔ ${nomeDi2(c)} <button type="button" class="iconbtn" data-azione="alt-ripristina" data-k="e" data-v="${esc(c)}" title="Rimetti il docente" aria-label="Rimetti ${nomeDi2(c)}">↺</button></span>`)
+        .concat(v.vietati.map(x => { const [id, c] = x.split('#'), s = b.aperti.find(z => z.id === id); return s ? `<span class="tag">🚫 ${nomeDi2(c)} non in ${esc(s.giorno)} ${s.ora}ª ${esc(s.classe)} <button type="button" class="iconbtn" data-azione="alt-ripristina" data-k="v" data-v="${esc(x)}" title="Annulla" aria-label="Annulla">↺</button></span>` : ''; }));
+      const nFissi = Object.keys(v.fissi).length;
+      const modifiche = manuali.length || nFissi ? `<div class="row alt-modifiche"><span class="hint">Modifiche tue:</span>${manuali.join('')}${nFissi ? `<span class="tag">🔒 ${nFissi} ${nFissi === 1 ? 'ora scelta' : 'ore scelte'} a mano</span>` : ''}<button type="button" class="btn" data-azione="alt-azzera">Azzera le modifiche</button></div>` : '';
       const conDispo = b.docenti.filter(d => d.ok.length).length;
       const senzaOre = b.docenti.filter(d => !ris.contenti.includes(d.codice));
       bozza = `<div class="alt-bozza"><h4>Bozza di copertura</h4>` +
         `<div class="row alt-sintesi"><span class="tag${ris.scoperte.length ? '' : ' ok'}">${ris.assegnazioni.length} di ${b.aperti.length} ore coperte</span>` +
         `<span class="tag">${ris.contenti.length} docenti con almeno un'ora (su ${conDispo} che potevano)</span><span class="tag">massimo ${ris.limite} ore a docente</span></div>` +
-        `<ul class="comp-righe">${righeB}</ul>` +
+        modifiche + `<ul class="comp-righe">${righeB}</ul>` +
         (senzaOre.length ? `<p class="hint">Senza ore: ${senzaOre.map(d => esc(nomeAlt(d.codice)) + (!d.ok.length ? ' (nessuna ora nell\'elenco)' : d.tetto != null && d.tetto - d.gia <= 0 ? ' (ha già il massimo di ore)' : '')).join(' · ')}.</p>` : '') +
         ((b.esclusi || []).length ? `<p class="hint">Esclusi dalla simulazione: ${b.esclusi.map(d => esc(nomeAlt(d.codice)) + ' (' + esc(d.motivo) + ')').join(' · ')}.</p>` : '') +
         `<div class="row comp-azioni"><button type="button" class="btn primary" data-azione="alt-applica"${ris.assegnazioni.length ? '' : ' disabled'}>✓ Applica la bozza alle ore qui sopra</button>` +
@@ -801,7 +855,8 @@ const SchedaCompresenze = (() => {
     if (azione === 'alt-foglio') { altDaFoglio(); return; }   // si ridisegna da sola a lettura finita
     if (azione === 'alt-simula' && g) altSimula(g);
     else if (azione === 'alt-applica' && g) altApplica(g);
-    else if (azione === 'alt-scarta') alt.bozza = null;
+    else if (azione === 'alt-scarta') { alt.bozza = null; alt.vincoli = { fissi: {}, vietati: [], esclusi: [] }; }
+    else if (['alt-vieta', 'alt-escludi', 'alt-ripristina', 'alt-azzera'].includes(azione) && g) altModifica(azione, b, g);
     else if (azione === 'alt-togli') { alt.dispo.splice(Number(b.dataset.i), 1); alt.bozza = null; modificato = true; }
     else if (azione === 'alt-su' || azione === 'alt-giu') {
       const i = Number(b.dataset.i), j = azione === 'alt-su' ? i - 1 : i + 1;
@@ -916,6 +971,7 @@ const SchedaCompresenze = (() => {
   function cambio(e) {
     const el = e.target;
     if (el.dataset.alfile !== undefined) { const f = el.files && el.files[0]; el.value = ''; if (f) altImporta(f); return; }
+    if (el.dataset.alfisso !== undefined) { const g = gruppi().find(eAlternativa); if (g) altModifica('fisso', el, g); disegna(); return; }
     if (el.dataset.algrad !== undefined) { const f = el.files && el.files[0]; el.value = ''; if (f) altGraduatoria(f); return; }
     if (el.dataset.al !== undefined && el.dataset.campo) { cambioAlt(el); return; }
     if (el.dataset.alcrit !== undefined || el.dataset.alopz !== undefined) { cambioAltOpzione(el); return; }
