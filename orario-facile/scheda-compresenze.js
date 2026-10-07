@@ -918,5 +918,16 @@ const SchedaCompresenze = (() => {
   // Le ore già lette dal Foglio (per l'«Orario di sintesi», sintesi.js): null se la scheda non ha ancora letto il Foglio
   const oreCaricate = () => stato === 'pronto' ? { righe: righe.filter(completa), sostegno: (griglia || []).slice() } : null;
 
-  return { monta, daSalvare, oreCaricate };
+  /*
+    Legge il Foglio (sostegno compreso) senza aprire la scheda, per contare le ore di compresenza nella scheda 5 «Docenti».
+    Solo se il permesso di Google c'è già (nessuna finestra di Google): restituisce una promessa, oppure null se non legge.
+  */
+  function precarica(contesto) {
+    if (stato !== 'collega' || typeof Compresenze === 'undefined' || typeof NomiDocenti === 'undefined') return null;
+    if (!NomiDocenti.gettoneDisponibile(permessi())) return null;
+    if (!ctx) ctx = contesto;
+    return carica();
+  }
+
+  return { monta, daSalvare, oreCaricate, precarica };
 })();
