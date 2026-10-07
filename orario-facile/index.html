@@ -1750,12 +1750,45 @@ function renderCompresenze(){
     box.innerHTML = '<p class="hint">La scheda Compresenze non è disponibile: manca il file scheda-compresenze.js o app/js/dati.js.</p>';
     return;
   }
-  SchedaCompresenze.monta(box, {
+  SchedaCompresenze.monta(box, contestoCompresenze());
+}
+// quello che la scheda Compresenze chiede a Orario Facile (lo usa anche la scheda 5 per leggere il Foglio)
+function contestoCompresenze(){
+  return {
     orario: () => Dati.normalizza(S),
     email: () => { const s = typeof Accesso !== 'undefined' && Accesso.sessione ? Accesso.sessione() : null; return s ? s.email : ''; },
     nome: codice => nomeVero(codice) ? nomeVero(codice).completo : '',
     nomi: () => NOMI
+  };
+}
+
+/*
+  Ore di compresenza di ogni docente (id docente -> ore): celle «+» di Orario Facile e Foglio Compresenze
+  (potenziamento, Alternativa, gli altri gruppi e la griglia «Sostegno» se la scheda 8 ha letto il Foglio).
+  Ogni ora (docente, giorno, ora, classe) si conta una volta sola; le ore senza classe (ricevimento, disponibilità) non contano.
+*/
+function oreCompresenza(){
+  const ore = {}, viste = new Set();
+  const conta = (d, g, s, cid) => { const k = d + '|' + g + '|' + s + '|' + cid; if(viste.has(k)) return; viste.add(k); ore[d] = (ore[d]||0) + 1; };
+  S.classi.forEach(c => S.giorni.forEach(g => (S.orario[c.id]?.[g]||[]).forEach((v,s) => { if(v) compresenti(v).forEach(x => conta(x.doc, g, s, c.id)); })));
+  const foglio = typeof SchedaCompresenze !== 'undefined' && SchedaCompresenze.oreCaricate ? SchedaCompresenze.oreCaricate() : null;
+  const righe = foglio ? foglio.righe.concat(foglio.sostegno) : (typeof Compresenze !== 'undefined' && Compresenze.elenco ? Compresenze.elenco() : []);
+  const perCodice = new Map(S.docenti.map(t => [String(t.nome).trim().toUpperCase(), t.id]));
+  const perClasse = new Map(S.classi.map(c => [String(c.nome).trim().toUpperCase(), c.id]));
+  righe.forEach(x => {
+    const d = perCodice.get(String(x.codice||'').trim().toUpperCase()), cid = perClasse.get(String(x.classe||'').trim().toUpperCase());
+    const g = S.giorni.find(y => y === x.giorno), s = Number(x.ora) - 1;
+    if(d && cid && g && s >= 0) conta(d, g, s, cid);
   });
+  return ore;
+}
+// il sostegno si conta solo se il Foglio Compresenze è già stato letto (scheda 8): se il permesso di Google c'è, lo legge da sola
+function sostegnoLetto(dopo){
+  if(typeof SchedaCompresenze === 'undefined' || !SchedaCompresenze.oreCaricate) return false;
+  if(SchedaCompresenze.oreCaricate()) return true;
+  const p = SchedaCompresenze.precarica && SchedaCompresenze.precarica(contestoCompresenze());
+  if(p) p.then(() => { if(SchedaCompresenze.oreCaricate()) dopo(); });
+  return false;
 }
 
 /* ---------------- 9. sostituzioni ---------------- */
@@ -1978,16 +2011,22 @@ function renderDocenti(){
     : `<div class="msg ok">Tutte le ore del quadro orario sono coperte dalle cattedre.</div>`;
   const tot = S.docenti.reduce((s,t) => s + oreDocente(t), 0);
   const need = S.classi.reduce((s,c) => s + oreQuadro(c), 0);
-  $('#docSummary').textContent = `${S.docenti.length} docenti · ${tot} ore assegnate su ${need} previste`;
+  // ore di compresenza (potenziamento, sostegno, Alternativa…): si sommano a quelle di cattedra di ogni docente
+  const co = oreCompresenza(), totCo = Object.values(co).reduce((a,b) => a + b, 0);
+  const conSostegno = sostegnoLetto(() => { if(S.ui.tab === 'docenti') renderDocenti(); });
+  $('#docSummary').textContent = `${S.docenti.length} docenti · ${tot} ore assegnate su ${need} previste` +
+    (totCo ? ` · più ${totCo} ore in compresenza` : '') +
+    (conSostegno ? '' : ' (il sostegno si conta dopo aver aperto una volta la scheda 8 Compresenze)');
 
   $('#listaDocenti').innerHTML = S.docenti.map((t,i) => {
-    const ore = oreDocente(t);
+    const cat = oreDocente(t), nCo = co[t.id] || 0, ore = cat + nCo;
     const aule = (t.aule||[]).map(a => aula(a)).filter(Boolean);
     const nInd = Object.values(t.indisp||{}).reduce((s,a) => s + a.length, 0);
     return `<details class="card" data-i="${i}" style="padding:0"${APERTI.has(i)?' open':''}>
       <summary style="cursor:pointer;padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <b style="font-family:var(--font-c);font-size:15px">${esc(nomeDoc(t.nome))}</b>
         <span class="tag acc">${ore} ore</span>
+        ${nCo ? `<span class="tag">${cat} in cattedra + ${nCo} in compresenza</span>` : ''}
         <span class="tag">${t.cattedre.length} cattedre</span>
         ${aule.length ? `<span class="tag">${esc(aule.map(a=>a.nome).join(' · '))}</span>` : `<span class="tag warn">nessuna aula</span>`}
         ${t.giornoLibero ? `<span class="tag">libero: ${esc(t.giornoLibero)}</span>` : ''}
@@ -2484,9 +2523,10 @@ function renderVista(){
     titolo = 'Classe ' + c.nome; corpo = grigliaClasse(c);
   } else if(v==='docente'){
     const t = doc(k); if(!t){ box.innerHTML = '<p class="hint">Nessun docente.</p>'; return; }
-    let nCo = 0;
-    S.classi.forEach(c => S.giorni.forEach(g => (S.orario[c.id]?.[g]||[]).forEach(v => { if(compresenti(v).some(x => x.doc===t.id)) nCo++; })));
-    titolo = nomeDoc(t.nome) + ' · ' + oreDocente(t) + ' ore' + (nCo ? ` + ${nCo} in compresenza` : '');
+    // ore di compresenza: celle «+» e Foglio Compresenze (sostegno compreso, se la scheda 8 l'ha letto)
+    sostegnoLetto(() => { if(S.ui.tab === 'orario' && S.ui.vista === 'docente') renderVista(); });
+    const nCo = oreCompresenza()[t.id] || 0;
+    titolo = nomeDoc(t.nome) + ' · ' + (oreDocente(t) + nCo) + ' ore' + (nCo ? ` (${oreDocente(t)} in cattedra + ${nCo} in compresenza)` : '');
     corpo = grigliaFiltro(x => inCella(x, t.id), 'docente', t.id);
   } else if(v==='aula'){
     const a = aula(k); if(!a){ box.innerHTML = '<p class="hint">Nessuna aula.</p>'; return; }
