@@ -75,6 +75,12 @@ vedere a tutti deve passare il file a chi ha accesso a GitHub (o farsi aggiunger
 - **Controlla fattibilità** verifica se l'orario è risolvibile prima di generare.
 - Viste: **Per classe**, **Per docente**, **Per aula**, **Quadro generale**; da lì anche **Stampa / PDF**.
 
+### Aule delle compresenze (scheda Compresenze)
+
+- Scelti giorno e ora, nella tendina **Aula** ogni aula ha un pallino: 🟢 libera, 🔴 occupata (tra parentesi chi la usa).
+- La **palestra** resta 🟢 se c'è al massimo 1 classe, la **mensa** se ci sono meno di 3 classi.
+- Se si sceglie un'aula occupata, sotto la riga compare un avviso.
+
 ## Pubblicare l'orario per tutti
 
 Il lavoro si salva da solo nel browser. Per farlo vedere a **tutti**:
