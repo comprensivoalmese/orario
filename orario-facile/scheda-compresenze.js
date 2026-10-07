@@ -310,6 +310,12 @@ const SchedaCompresenze = (() => {
       const doppie = righe.filter(x => x !== r && x.codice === r.codice && x.giorno === r.giorno && Number(x.ora) === ora);
       if (doppie.length) avvisi.push('Il docente ha già un\'altra compresenza in quest\'ora.');
     }
+    // l'aula scelta è già occupata in quell'ora? (stessa regola dei pallini della tendina)
+    const aulaScelta = r.aula ? d.aula.find(a => semplice(a.nome) === semplice(r.aula)) : null;
+    if (aulaScelta) {
+      const occ = occupazioneAula(aulaScelta, r.giorno, ora, r);
+      if (!aulaLibera(aulaScelta, occ)) avvisi.push(`In quell'ora l'aula ${aulaScelta.nome} è occupata: ${occ.testo}.`);
+    }
     return { avvisi, info, incompleta: false };
   }
 
@@ -340,6 +346,35 @@ const SchedaCompresenze = (() => {
     return motivoLibero(e, r.giorno, Number(r.ora), classe, r);
   }
 
+  /*
+    Chi usa l'aula «a» in quel giorno e ora (lezioni dell'orario e altre righe del Foglio, tranne la riga «r»):
+    { classi: nomi delle classi diverse, testo: per esempio «2D Arte», titolare: è l'aula della classe della riga }.
+    La classe della riga non occupa l'aula: il compresente sta lì con lei. Serve per il pallino della tendina «Aula».
+  */
+  function occupazioneAula(a, giorno, ora, r) {
+    const classi = new Set(), voci = [], mia = semplice(r.classe || '');
+    let titolare = false;
+    curricolari().filter(l => l.giorno === giorno && l.ora === ora && l.aula === a.id).forEach(l => {
+      const c = nomeDi('classe', l.classe);
+      if (mia && semplice(c) === mia) { titolare = true; return; }
+      classi.add(semplice(c)); voci.push(c + (l.materia ? ' ' + l.materia : ''));
+    });
+    righe.filter(x => x !== r && x.aula && semplice(x.aula) === semplice(a.nome) && x.giorno === giorno && Number(x.ora) === ora).forEach(x => {
+      if (x.classe && semplice(x.classe) === mia) return;
+      if (x.classe) classi.add(semplice(x.classe));
+      voci.push((x.classe ? x.classe + ' ' : '') + 'compresenza ' + nomeDoc(x.codice));
+    });
+    return { classi: classi.size, testo: voci.join(', '), titolare };
+  }
+  // l'aula è libera? La palestra resta «libera» se c'è al massimo 1 classe, la mensa se ci sono meno di 3 classi (scelta della scuola)
+  // (le classi contate sono le ALTRE: quella della riga non occupa l'aula)
+  function aulaLibera(a, occ) {
+    if (!occ.testo) return true;
+    if (/pal/i.test(a.nome)) return occ.classi <= 1;
+    if (/mensa/i.test(a.nome)) return occ.classi < 3;
+    return false;
+  }
+
   function rigaHtml(r, i, g) {
     const d = D();
     const classeRiga = r.classe ? d.classe.find(c => semplice(c.nome) === semplice(r.classe)) : null;
@@ -356,7 +391,14 @@ const SchedaCompresenze = (() => {
     if (r.classe && !classi.some(x => semplice(x.v) === semplice(r.classe))) classi.unshift({ v: r.classe, t: r.classe });
     const giorni = d.giorni.map(x => ({ v: x, t: x }));
     const ore = d.ore.map(o => ({ v: o.n, t: `${o.n}ª (${o.inizio})` }));
-    const aule = d.aula.map(a => ({ v: a.nome, t: a.nome }));
+    // con giorno e ora scelti, davanti a ogni aula un pallino: 🟢 libera, 🔴 occupata (con chi la usa)
+    const conOra = r.giorno && r.ora;
+    const aule = d.aula.map(a => {
+      if (!conOra) return { v: a.nome, t: a.nome };
+      const occ = occupazioneAula(a, r.giorno, Number(r.ora), r);
+      const nota = [occ.titolare ? 'aula della classe' : '', occ.testo].filter(Boolean).join(', ');
+      return { v: a.nome, t: (aulaLibera(a, occ) ? '🟢 ' : '🔴 ') + a.nome + (nota ? ` (${nota})` : '') };
+    });
     if (r.aula && !aule.some(x => semplice(x.v) === semplice(r.aula))) aule.unshift({ v: r.aula, t: r.aula });
     const k = controlli(r);
     const campo = (nome, etichetta, html) => `<label class="fl comp-campo comp-${nome}">${etichetta}${html}</label>`;
