@@ -62,3 +62,4 @@
   .alt-criteri-doc { grid-template-columns: repeat(3, 1fr); }
   .alt-opzioni { grid-template-columns: 1fr 1fr 2fr; }
 }
+.alt-esclusioni { display: grid; gap: 6px; margin: 6px 0; }

@@ -110,6 +110,7 @@ const Alternativa = (() => {
       slots:   [{ id, giorno, ora, classe }]                  le ore da coprire (quelle che non hanno già un docente)
       docenti: [{ codice, escl, classiPrima: ['2a'…], punteggio, gia, ok: [id delle ore dove può stare] }]
                «gia» = ore di Alternativa che il docente ha già nel Foglio (contano nel limite)
+               «tetto» (facoltativo) = massimo di ore di Alternativa in tutto per questo docente (per non superare le 24 ore totali)
       ordine:  ['priorita', 'accontentare', …]               solo i criteri spuntati, nell'ordine scelto
       limite:  numero massimo di ore per docente ('' = il minimo che permette di coprire il più possibile)
       graduatoriaAlta: true se un punteggio più alto passa avanti
@@ -160,7 +161,8 @@ const Alternativa = (() => {
     slots.forEach((s, i) => arco(S, nodoOra[i], 1, 0n));
     const archiAssegna = [];                                    // { arco, slot, docente }
     docenti.forEach((d, j) => {
-      const unitaLibere = Math.max(0, limite - (d.gia || 0));
+      const lim = Math.min(limite, d.tetto == null ? Infinity : d.tetto);      // il limite della simulazione e il tetto di ore in tutto di questo docente
+      const unitaLibere = Math.max(0, lim - (d.gia || 0));
       const nodoDoc = nodo();
       const classiPrima = new Set(d.classiPrima || []);
       const perGH = new Map();                                  // un docente non può stare in due classi nella stessa ora
@@ -171,7 +173,7 @@ const Alternativa = (() => {
         const bonusClasse = classiPrima.has(semplice(s.classe)) ? P('continuita') : 0n;
         archiAssegna.push({ e: arco(nodoOra[i], perGH.get(gh), 1, -(COPERTURA + bonusClasse)), slot: i, docente: j });
       });
-      for (let u = (d.gia || 0) + 1; u <= limite; u++) {
+      for (let u = (d.gia || 0) + 1; u <= lim; u++) {
         let k = BigInt(u);                                      // equilibrio: più ore ha già, più costa dargliene un'altra
         k -= P('graduatoria') * BigInt(valoreGrad(d));          // il punteggio vale a ogni ora
         if (u === 1) k -= P('priorita') * BigInt(valorePrio(d)) + P('accontentare');   // la prima ora «accontenta» il docente

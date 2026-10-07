@@ -63,6 +63,10 @@ Le parti del progetto:
   coprire più ore possibile, poi i criteri spuntati e ordinati (▲▼): 1 priorità per le esclusioni degli anni passati, 2 accontentare il
   maggior numero di docenti, 3 continuità sulla classe dell'anno scorso (le classi «salgono» di un anno: la 1A di allora è la 2A di oggi),
   4 punteggio di graduatoria (più alto o più basso = precedenza); infine equilibrio delle ore (limite per docente automatico o scelto).
+  **Esclusioni e limiti** (spunte con soglie modificabili): si escludono i docenti con meno di 18 ore di cattedra (COE e part time;
+  cattedra = lezioni curricolari dell'orario + gruppi «completamento» e «potenziamento», che completano la cattedra) e non si superano
+  24 ore in tutto (cattedra + altre ore eccedenti con classe, sostegno incluso + Alternativa già scritta; ricevimento e disponibilità
+  per le supplenze non contano). Per ogni docente il riquadro mostra «ore: 14 + 4 compl. = 18 su 24» (`altOre` in scheda-compresenze.js).
   Per ogni docente si scrivono (nel riquadro o nel Foglio) esclusioni, classi dell'anno scorso e punteggio. «Applica la bozza» scrive le
   righe nel gruppo (poi «Salva sul Foglio»). Prove: `.claude/test-alternativa.html` e `.claude/test-scheda-alternativa.html` (locali).
   **Sostegno** (dato sanitario, GDPR): griglia «Sostegno» (un docente per riga, giorni × ore, in ogni cella la classe) e scheda

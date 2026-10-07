@@ -445,16 +445,17 @@ const SchedaCompresenze = (() => {
   const TITOLI_ALT = ['Codice docente', 'Docente'].concat(GIORNI_ALT, ['Nessuna disponibilità (SI/NO)', 'Esclusioni negli anni passati', 'Classi dell\'anno scorso', 'Punteggio graduatoria']);
   const SCHEDA_ALT = 'Disponibilità Alternativa';
   const CHIAVE_PREF_ALT = 'orariofacile.alternativa';
-  let alt = { dispo: [], nelFoglio: false, bozza: null, criteri: Alternativa.CRITERI.map(c => ({ id: c.id, attivo: true })), limite: '', salgono: true, alta: true, risposte: '' };
+  let alt = { dispo: [], nelFoglio: false, bozza: null, criteri: Alternativa.CRITERI.map(c => ({ id: c.id, attivo: true })), limite: '', salgono: true, alta: true, risposte: '', escludi: true, pieno: 18, usaTetto: true, tetto: 24 };
   try {
     const p = JSON.parse(localStorage.getItem(CHIAVE_PREF_ALT) || 'null');
     if (p && Array.isArray(p.criteri)) {
       const noti = p.criteri.filter(c => Alternativa.CRITERI.some(x => x.id === c.id));
       alt.criteri = noti.concat(Alternativa.CRITERI.filter(x => !noti.some(c => c.id === x.id)).map(x => ({ id: x.id, attivo: true })));
       alt.limite = p.limite || ''; alt.salgono = p.salgono !== false; alt.alta = p.alta !== false; alt.risposte = p.risposte || '';
+      alt.escludi = p.escludi !== false; alt.pieno = p.pieno || 18; alt.usaTetto = p.usaTetto !== false; alt.tetto = p.tetto || 24;
     }
   } catch (e) { /* senza memoria si parte dalle impostazioni proposte */ }
-  const salvaPrefAlt = () => { try { localStorage.setItem(CHIAVE_PREF_ALT, JSON.stringify({ criteri: alt.criteri, limite: alt.limite, salgono: alt.salgono, alta: alt.alta, risposte: alt.risposte })); } catch (e) { /* va bene lo stesso */ } };
+  const salvaPrefAlt = () => { try { localStorage.setItem(CHIAVE_PREF_ALT, JSON.stringify({ criteri: alt.criteri, limite: alt.limite, salgono: alt.salgono, alta: alt.alta, risposte: alt.risposte, escludi: alt.escludi, pieno: alt.pieno, usaTetto: alt.usaTetto, tetto: alt.tetto })); } catch (e) { /* va bene lo stesso */ } };
 
   const fileAlt = () => CONFIG.fileAlternativa || CONFIG.fileCompresenze;
   async function chiamaAlt(t, percorso, opzioni) {
@@ -530,18 +531,40 @@ const SchedaCompresenze = (() => {
   // dati per la simulazione: le ore ancora da coprire e, per ogni docente, in quali può stare
   function altDatiSimulazione(g) {
     const slots = altSlots(g), aperti = slots.filter(s => !(s.riga && s.riga.codice));
-    const docenti = alt.dispo.filter(x => x.codice && !x.nessuna).map(x => {
-      const e = D().docente.find(k => codiceDi(k) === x.codice);
+    const docenti = [], esclusi = [];
+    alt.dispo.filter(x => x.codice && !x.nessuna).forEach(x => {
+      const e = D().docente.find(k => codiceDi(k) === x.codice), o = altOre(x.codice, e, g), m = altMotivoEscluso(o, e);
+      if (m) { esclusi.push({ codice: x.codice, motivo: m }); return; }
       const ok = e ? aperti.filter(s => Alternativa.oreDa(x.giorni[s.giorno]).includes(s.ora) && !motivoLibero(e, s.giorno, s.ora, s.classeObj, null)).map(s => s.id) : [];
-      return { codice: x.codice, escl: x.escl, classiPrima: Alternativa.classiDiOggi(x.classiPrima, alt.salgono), punteggio: x.punteggio,
-        gia: righe.filter(r => gruppoDi(r.tipo) === g && r.codice === x.codice).length, ok };
+      // tetto = quante ore di Alternativa in tutto può avere senza superare le ore totali (cattedra + altre eccedenze + Alternativa)
+      docenti.push({ codice: x.codice, escl: x.escl, classiPrima: Alternativa.classiDiOggi(x.classiPrima, alt.salgono), punteggio: x.punteggio,
+        gia: o.gia, tetto: alt.usaTetto ? Math.max(0, alt.tetto - o.piena - o.altre) : undefined, ok });
     });
-    return { slots, aperti, docenti };
+    return { slots, aperti, docenti, esclusi };
   }
+  /*
+    Le ore di un docente: cattedra (le lezioni curricolari dell'orario), altre ore eccedenti (le compresenze degli altri gruppi e il
+    sostegno) e ore di Alternativa già scritte. Chi ha meno ore della cattedra piena (18) ha una cattedra esterna (COE) o un part time.
+  */
+  // Il completamento (tempo prolungato) e il potenziamento servono a COMPLETARE la cattedra (16 ore + 2 di completamento = 18):
+  // contano come cattedra. Le ore eccedenti vere sono le altre compresenze con una classe (e il sostegno); il ricevimento e la
+  // disponibilità per le supplenze (gruppi senza classe) non sono ore in più.
+  const completaCattedra = g => !!g && /completamento|potenziamento/.test(semplice(g.tipo));
+  function altOre(codice, e, g) {
+    const sue = righe.filter(r => r.codice === codice && completa(r));
+    const cattedra = e ? curricolari().filter(l => l.docente === e.id).length : 0;
+    const compl = sue.filter(r => completaCattedra(gruppoDi(r.tipo))).length;
+    const altre = sue.filter(r => { const x = gruppoDi(r.tipo); return x !== g && !completaCattedra(x) && !(x && x.senzaClasse); }).length + (griglia || []).filter(x => x.codice === codice).length;
+    const gia = sue.filter(r => gruppoDi(r.tipo) === g).length;
+    return { cattedra, compl, altre, gia, piena: cattedra + compl, totale: cattedra + compl + altre + gia };
+  }
+  // perché il docente è escluso dalla simulazione (cattedra esterna o part time), oppure ''
+  const altMotivoEscluso = (o, e) => !e || !alt.escludi || o.piena >= alt.pieno ? ''
+    : o.piena === 0 ? 'nessuna cattedra nell\'orario (potenziamento, sostegno…)' : `cattedra di ${o.piena} ore: COE o part time`;
   function altSimula(g) {
     const dati = altDatiSimulazione(g);
     const ris = Alternativa.simula({ slots: dati.aperti, docenti: dati.docenti, ordine: alt.criteri.filter(c => c.attivo).map(c => c.id), limite: alt.limite, graduatoriaAlta: alt.alta });
-    alt.bozza = { ris, aperti: dati.aperti, docenti: dati.docenti };
+    alt.bozza = { ris, aperti: dati.aperti, docenti: dati.docenti, esclusi: dati.esclusi };
     messaggio = '';
   }
   function altApplica(g) {
@@ -607,11 +630,14 @@ const SchedaCompresenze = (() => {
     const righeDoc = alt.dispo.map((x, i) => {
       const chips = voci[i].map(v => `<span class="tag ${v.stato === 'ok' ? 'ok' : 'warn'}" title="${esc(v.testo)}">${esc(abbr(v.giorno))} ${v.ora}ª ${v.stato === 'ok' ? '✓' : '⚠'}</span>`).join('');
       const problemi = voci[i].filter(v => v.stato !== 'ok').map(v => `${abbr(v.giorno)} ${v.ora}ª: ${v.testo}`);
+      // le ore del docente (cattedra + altre eccedenze + Alternativa) ed eventuale esclusione per cattedra esterna o part time
+      const eDoc = x.codice ? D().docente.find(k => codiceDi(k) === x.codice) : null, o = eDoc ? altOre(x.codice, eDoc, g) : null, escluso = o ? altMotivoEscluso(o, eDoc) : '';
+      const oreTot = o ? `<span class="tag" title="cattedra (con completamento e potenziamento) + altre ore eccedenti + Alternativa già scritta">ore: ${o.cattedra}${o.compl ? ' + ' + o.compl + ' compl.' : ''}${o.altre ? ' + ' + o.altre + ' ecc.' : ''}${o.gia ? ' + ' + o.gia + ' Alt.' : ''} = ${o.totale}${alt.usaTetto ? ' su ' + alt.tetto : ''}</span>` : '';
       return `<li class="comp-riga alt-doc">` +
         `<div class="row spread"><b>${esc(x.nome)}</b>` +
         (x.codice ? `<span class="tag">${esc(x.codice)}</span>` : `<label class="fl comp-campo">Chi è?<select data-al="${i}" data-campo="codice">${opzioni(codiciOpz, '', '— scegli il docente —')}</select></label>`) +
         `<button type="button" class="iconbtn" data-azione="alt-togli" data-i="${i}" title="Togli questo docente" aria-label="Togli ${esc(x.nome)}">✕</button></div>` +
-        `<div class="row alt-ore">${x.nessuna ? '<span class="tag">Nessuna disponibilità</span>' : (chips || '<span class="tag warn">Nessuna ora indicata</span>')}</div>` +
+        `<div class="row alt-ore">${oreTot}${escluso ? `<span class="tag warn">esclusa/o dalla simulazione: ${esc(escluso)}</span>` : ''}${x.nessuna ? '<span class="tag">Nessuna disponibilità</span>' : (chips || '<span class="tag warn">Nessuna ora indicata</span>')}</div>` +
         (problemi.length ? `<p class="hint">${problemi.map(esc).join(' · ')}</p>` : '') +
         `<div class="comp-campi alt-criteri-doc">` +
         `<label class="fl comp-campo">Esclusioni negli anni passati<input type="number" min="0" data-al="${i}" data-campo="escl" value="${esc(x.escl)}" placeholder="0"></label>` +
@@ -644,7 +670,8 @@ const SchedaCompresenze = (() => {
         `<div class="row alt-sintesi"><span class="tag${ris.scoperte.length ? '' : ' ok'}">${ris.assegnazioni.length} di ${b.aperti.length} ore coperte</span>` +
         `<span class="tag">${ris.contenti.length} docenti con almeno un'ora (su ${conDispo} che potevano)</span><span class="tag">massimo ${ris.limite} ore a docente</span></div>` +
         `<ul class="comp-righe">${righeB}</ul>` +
-        (senzaOre.length ? `<p class="hint">Senza ore: ${senzaOre.map(d => esc(nomeAlt(d.codice)) + (d.ok.length ? '' : ' (nessuna ora nell\'elenco)')).join(' · ')}.</p>` : '') +
+        (senzaOre.length ? `<p class="hint">Senza ore: ${senzaOre.map(d => esc(nomeAlt(d.codice)) + (!d.ok.length ? ' (nessuna ora nell\'elenco)' : d.tetto != null && d.tetto - d.gia <= 0 ? ' (ha già il massimo di ore)' : '')).join(' · ')}.</p>` : '') +
+        ((b.esclusi || []).length ? `<p class="hint">Esclusi dalla simulazione: ${b.esclusi.map(d => esc(nomeAlt(d.codice)) + ' (' + esc(d.motivo) + ')').join(' · ')}.</p>` : '') +
         `<div class="row comp-azioni"><button type="button" class="btn primary" data-azione="alt-applica"${ris.assegnazioni.length ? '' : ' disabled'}>✓ Applica la bozza alle ore qui sopra</button>` +
         `<button type="button" class="btn" data-azione="alt-scarta">Scarta la bozza</button></div></div>`;
     }
@@ -661,6 +688,12 @@ const SchedaCompresenze = (() => {
       `<button type="button" class="btn" data-azione="alt-foglio">🔄 Aggiorna dal Foglio</button></div>` +
       (alt.dispo.length ? `<ol class="comp-righe">${righeDoc}</ol>` : '<p class="hint">Nessuna disponibilità caricata.</p>') +
       (alt.dispo.length ? `<h4>Criteri della simulazione</h4><p class="hint">Spunta quelli da usare e mettili in ordine: il primo conta più del secondo, e così via. Prima di tutto si copre il maggior numero di ore possibile.</p>` +
+        `<h4>Esclusioni e limiti</h4><div class="alt-esclusioni">` +
+        `<label class="row comp-spunta"><input type="checkbox" data-alopz="escludi"${alt.escludi ? ' checked' : ''}> <span>Escludi i docenti con cattedra esterna (COE) o part time: hanno meno di ` +
+        `<input type="number" min="1" max="30" data-alopz="pieno" value="${esc(alt.pieno)}" style="width:64px"> ore di cattedra</span></label>` +
+        `<label class="row comp-spunta"><input type="checkbox" data-alopz="usaTetto"${alt.usaTetto ? ' checked' : ''}> <span>Non superare <input type="number" min="1" max="40" data-alopz="tetto" value="${esc(alt.tetto)}" style="width:64px"> ore in tutto ` +
+        `(cattedra + altre ore eccedenti + Alternativa)</span></label></div>` +
+        `<h4>Criteri in ordine</h4>` +
         `<ol class="alt-criteri">${criteri}</ol>` +
         `<div class="comp-campi alt-opzioni">` +
         `<label class="fl comp-campo">Massimo ore per docente<input type="number" min="1" data-alopz="limite" value="${esc(alt.limite)}" placeholder="automatico"></label>` +
@@ -680,6 +713,10 @@ const SchedaCompresenze = (() => {
     if (el.dataset.alcrit !== undefined) alt.criteri[Number(el.dataset.alcrit)].attivo = el.checked;
     else if (el.dataset.alopz === 'limite') alt.limite = el.value === '' ? '' : String(Math.max(1, parseInt(el.value, 10) || 1));
     else if (el.dataset.alopz === 'alta') alt.alta = el.value === '1';
+    else if (el.dataset.alopz === 'escludi') alt.escludi = el.checked;
+    else if (el.dataset.alopz === 'usaTetto') alt.usaTetto = el.checked;
+    else if (el.dataset.alopz === 'pieno') alt.pieno = Math.max(1, parseInt(el.value, 10) || 18);
+    else if (el.dataset.alopz === 'tetto') alt.tetto = Math.max(1, parseInt(el.value, 10) || 24);
     else if (el.dataset.alopz === 'salgono') alt.salgono = el.checked;
     alt.bozza = null; salvaPrefAlt(); disegna();
   }
