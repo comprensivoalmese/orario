@@ -92,6 +92,59 @@ const Alternativa = (() => {
     return '';
   }
 
+  /* ---------- la graduatoria interna ---------- */
+  /*
+    Legge il file della graduatoria interna (.xlsx, .ods, .csv). Trova da sola la riga delle intestazioni (nelle prime 15 righe: una
+    colonna con il nome e una con «punteggio» o «totale»), anche se il nome è in due colonne (Cognome, Nome). Se ci sono più colonne
+    di punteggio sceglie «Totale punteggio» o simili, ma si può scegliere un'altra con «colonna».
+    Restituisce { righe: [{ nome, punteggio }], colonne: [{ indice, titolo }], usata: indice della colonna scelta }.
+  */
+  function leggiGraduatoria(tabelle, colonna) {
+    let trovato = null;
+    for (const t of tabelle || []) {
+      for (let i = 0; i < Math.min(15, (t.righe || []).length) && !trovato; i++) {
+        const h = t.righe[i].map(semplice);
+        if (h.some(c => /cognome|nominativo|docente|^nome$/.test(c)) && h.some(c => /punt|totale/.test(c))) trovato = { t, i, h };
+      }
+      if (trovato) break;
+    }
+    if (!trovato) throw new Error('Nel file non trovo le intestazioni: servono una colonna con il nome (Cognome e Nome) e una con «Punteggio» o «Totale».');
+    const { t, i, h } = trovato, intest = t.righe[i];
+    const iCogn = h.findIndex(c => c.startsWith('cognome')), iNome = h.findIndex(c => c === 'nome');
+    const iCompleto = iCogn >= 0 && h[iCogn].length > 'cognome'.length ? iCogn : -1;                 // «Cognome e Nome» in una colonna sola
+    const iAltro = h.findIndex(c => /nominativo|docente/.test(c));
+    const nomeDi = r => iCompleto >= 0 ? String(r[iCompleto] || '') : iCogn >= 0 ? (String(r[iCogn] || '') + ' ' + (iNome >= 0 ? String(r[iNome] || '') : '')) : String(r[iAltro >= 0 ? iAltro : iNome] || '');
+    const corpo = t.righe.slice(i + 1).filter(r => nomeDi(r).trim());
+    // le colonne dei punteggi: quelle con «punt» o «totale» nel titolo e almeno un numero
+    const rango = c => (/totale/.test(c) && /punt/.test(c) ? 3 : /totale/.test(c) ? 2 : /punteggio/.test(c) ? 1 : 0);
+    const colonne = h.map((c, k) => ({ indice: k, titolo: String(intest[k] || '').trim(), rango: rango(c) }))
+      .filter((x, k) => /punt|totale/.test(h[k]) && corpo.some(r => numero(r[k]) !== null));
+    if (!colonne.length) throw new Error('Nel file ci sono le intestazioni ma non trovo punteggi numerici.');
+    const migliore = colonne.reduce((a, b) => (b.rango >= a.rango ? b : a));
+    const usata = colonna !== undefined && colonne.some(x => x.indice === Number(colonna)) ? Number(colonna) : migliore.indice;
+    const righe = corpo.map(r => ({ nome: nomeDi(r).trim().replace(/\s+/g, ' '), punteggio: numero(r[usata]) })).filter(r => r.punteggio !== null);
+    return { righe, colonne: colonne.map(({ indice, titolo }) => ({ indice, titolo })), usata };
+  }
+
+  /*
+    Abbina i punteggi ai docenti delle disponibilità, dal nome (senza badare all'ordine). «nomiDi(x)» può dare altri nomi dello stesso
+    docente (quelli veri letti da «👁 Nomi»). Restituisce { abbinati: [{ i, punteggio }], senza: [indici dei docenti non trovati] }.
+  */
+  function abbinaPunteggi(dispo, righe, nomiDi) {
+    const insiemi = righe.map(r => new Set(parole(r.nome)));
+    const uguali = (a, b) => a.size === b.size && [...a].every(x => b.has(x));
+    const contenuti = (a, b) => a.size && b.size && ([...a].every(x => b.has(x)) || [...b].every(x => a.has(x)));
+    const abbinati = [], senza = [];
+    dispo.forEach((d, i) => {
+      const miei = [d.nome].concat(nomiDi ? nomiDi(d) : []).filter(Boolean).map(n => new Set(parole(n)));
+      let trovati = righe.map((r, k) => k).filter(k => miei.some(m => uguali(m, insiemi[k])));
+      if (!trovati.length) trovati = righe.map((r, k) => k).filter(k => miei.some(m => contenuti(m, insiemi[k])));
+      if (trovati.length === 1) abbinati.push({ i, punteggio: righe[trovati[0]].punteggio });
+      else senza.push(i);
+    });
+    return { abbinati, senza };
+  }
+
   // le classi dell'anno scorso, scritte dall'utente («2A, 3B»), come sono chiamate oggi: la 1A di allora è la 2A di oggi
   function classiDiOggi(testo, salgono) {
     return String(testo || '').split(/[,;/]/).map(x => x.trim()).filter(Boolean).map(c => {
@@ -203,5 +256,5 @@ const Alternativa = (() => {
     return { assegnazioni, scoperte: slots.filter(s => !coperte.has(s.id)).map(s => s.id), contenti: [...new Set(assegnazioni.map(a => a.codice))], limite };
   }
 
-  return { CRITERI, GIORNI, giornoDa, oreDa, testoOre, leggiDisponibilita, codiceDaNome, classiDiOggi, simula, numero };
+  return { CRITERI, GIORNI, giornoDa, oreDa, testoOre, leggiDisponibilita, codiceDaNome, leggiGraduatoria, abbinaPunteggi, classiDiOggi, simula, numero };
 })();

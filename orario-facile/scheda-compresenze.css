@@ -66,3 +66,10 @@
 /* il riquadro dell'Alternativa sta DENTRO la scheda del gruppo, separato da una riga */
 .comp-alt { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
 .comp-alt summary h4 { display: inline; margin: 0; font-size: 1.05em; }
+
+/* Le schede dei gruppi (Alternativa, Potenziamento L2…) si contraggono toccando la testata */
+.comp-testata { cursor: pointer; margin-bottom: 0; }
+.comp-contrai[open] > .comp-testata { margin-bottom: 6px; }
+.comp-testata h3::before { content: '▾ '; color: var(--text-3); }
+.comp-contrai:not([open]) > .comp-testata h3::before { content: '▸ '; }
+.comp-testata::-webkit-details-marker { display: none; }

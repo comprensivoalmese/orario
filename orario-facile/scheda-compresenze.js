@@ -40,6 +40,7 @@ const SchedaCompresenze = (() => {
   // i gruppi di questa scuola, letti dalla scheda «Gruppi» del Foglio (null = scheda assente: si usano quelli proposti)
   // { tipo, previste (numero o ''), docenti: [{ codice, ore }], nelleOreDi, spiegazione, altriNomi }
   let gruppiScuola = null;
+  const gruppiChiusi = new Set();   // le schede dei gruppi contratte (chiave = nome del gruppo): restano così anche quando si ridisegna
   let gruppiAperti = null;   // riquadro «Gruppi e ore previste» aperto (null = aperto solo se la scheda «Gruppi» non c'è ancora)
   let gruppiDalFoglio = false;   // true se i gruppi sono stati letti dalla scheda «Gruppi»
   const TITOLI_GRUPPI = ['Tipo', 'Ore previste', 'Docenti previsti (es. DOC08:1, DOC19:2)', 'Nelle ore di (materia in parallelo)', 'Spiegazione', 'Senza classe (SI/NO)', 'Luogo (gruppi senza classe)'];
@@ -395,13 +396,16 @@ const SchedaCompresenze = (() => {
       return `<span class="tag${n === x.ore ? ' ok' : ''}">${esc(nomeDoc(x.codice))}: ${n} di ${x.ore}</span>`;
     }).join('')}</div>` : '';
     const gid = g ? String(indice) : ALTRE;
+    // la scheda si contrae toccando il titolo: resta visibile solo la testata con il conto delle ore
+    const chiave = g ? semplice(g.tipo) : ALTRE;
     return `<section class="card comp-scheda" aria-labelledby="titoloGruppo${gid}">` +
-      `<div class="row spread"><h3 id="titoloGruppo${gid}">${esc(titolo)}</h3>${conto}</div>` +
+      `<details class="comp-contrai" data-chiave="${esc(chiave)}"${gruppiChiusi.has(chiave) ? "" : " open"}>` +
+      `<summary class="row spread comp-testata"><h3 id="titoloGruppo${gid}">${esc(titolo)}</h3>${conto}</summary>` +
       (g && g.spiegazione ? `<p class="hint">${esc(g.spiegazione)}</p>` : '') + docenti +
       (mie.length ? `<ol class="comp-righe">${mie.map(x => rigaHtml(x.r, x.i, g)).join('')}</ol>` : '<p class="hint">Nessuna ora inserita.</p>') +
       `<div class="row comp-azioni"><button type="button" class="btn" data-azione="aggiungi" data-gruppo="${gid}">+ Aggiungi un'ora</button>` +
       (g && g.nelleOreDi ? `<button type="button" class="btn" data-azione="parallelo" data-gruppo="${gid}">Aggiungi le ore di ${esc(g.nelleOreDi)} che mancano</button>` : '') +
-      `</div>` + (g && eAlternativa(g) ? altHtml(g) : '') + `</section>`;
+      `</div>` + (g && eAlternativa(g) ? altHtml(g) : '') + `</details></section>`;
   }
 
   function disegna() {
@@ -600,6 +604,26 @@ const SchedaCompresenze = (() => {
     messaggio = `Disponibilità lette: ${alt.dispo.length} docenti` + (vecchi.size ? ` (${nuovi} nuovi, ${cambiati} cambiate)` : '') +
       (senza ? `, ${senza} da riconoscere (scegli il docente nell'elenco)` : ', tutti riconosciuti') + '. Premi «Salva sul Foglio» per tenerle.';
   }
+  /*
+    La graduatoria interna (file con nome e punteggio di ogni docente): i punteggi vanno ai docenti delle disponibilità, riconosciuti
+    dal nome; chi non si trova resta com'è. Il file non si conserva: restano solo i punteggi, nella scheda del Foglio.
+  */
+  function altApplicaGraduatoria(colonna) {
+    const nomi = ctx.nomi && ctx.nomi();
+    const lettura = Alternativa.leggiGraduatoria(alt.grad.tabelle, colonna);
+    alt.grad.lettura = lettura;
+    const ab = Alternativa.abbinaPunteggi(alt.dispo, lettura.righe, x => { const v = x.codice && nomi && nomi.get(x.codice); return v ? [(v.cognome || '') + ' ' + (v.nome || '')] : []; });
+    ab.abbinati.forEach(a => { alt.dispo[a.i].punteggio = String(a.punteggio).replace('.', ','); });
+    alt.bozza = null; modificato = true;
+    const col = lettura.colonne.find(c => c.indice === lettura.usata);
+    messaggio = `Graduatoria letta (colonna «${col.titolo}»): ${ab.abbinati.length} punteggi assegnati su ${alt.dispo.length} docenti` +
+      (ab.senza.length ? `. Senza punteggio (non trovati nel file): ${ab.senza.map(i => alt.dispo[i].nome).join(', ')}` : '') + '. Premi «Salva sul Foglio» per tenerli.';
+  }
+  async function altGraduatoria(file) {
+    if (!alt.dispo.length) { messaggio = '⚠️ Carica prima le disponibilità: la graduatoria dà il punteggio ai docenti che si sono resi disponibili.'; disegna(); return; }
+    try { alt.grad = { tabelle: await Foglio.leggiTabelle(file) }; altApplicaGraduatoria(); } catch (e) { messaggio = '⚠️ ' + String(e && e.message || e); }
+    disegna();
+  }
   async function altImporta(file) {
     try { altUnisci(await Foglio.leggiTabelle(file)); } catch (e) { messaggio = '⚠️ ' + String(e && e.message || e); }
     disegna();
@@ -681,6 +705,9 @@ const SchedaCompresenze = (() => {
       `<p class="hint">Carica il file delle risposte del modulo: per ogni docente controllo che le ore indicate siano tra quelle in cui può stare (libero e non della classe, come nell'elenco qui sopra) ` +
       `e poi puoi simulare una prima copertura delle ${scoperte} ore ancora senza docente. I nomi restano solo su Drive.</p>` +
       `<div class="row comp-azioni"><label class="btn alt-file">📥 Carica le disponibilità (.xlsx, .ods, .csv)<input type="file" accept=".xlsx,.ods,.csv" data-alfile hidden></label>` +
+      `<label class="btn alt-file">📥 Carica la graduatoria interna<input type="file" accept=".xlsx,.ods,.csv" data-algrad hidden></label>` +
+      // se nel file della graduatoria ci sono più colonne di punteggio si può scegliere quale usare
+      (alt.grad && alt.grad.lettura && alt.grad.lettura.colonne.length > 1 ? `<label class="fl comp-campo">Colonna del punteggio<select data-alopz="colgrad">${opzioni(alt.grad.lettura.colonne.map(c => ({ v: c.indice, t: c.titolo || ('colonna ' + (c.indice + 1)) })), alt.grad.lettura.usata)}</select></label>` : '') +
       (alt.dispo.length ? `<span class="tag${buone === tutte.length ? ' ok' : ''}">${alt.dispo.length} docenti · ${buone} ore su ${tutte.length} nell'elenco</span>` : '') + `</div>` +
       // per i prossimi aggiornamenti: si rilegge direttamente il Foglio Google delle risposte del modulo, senza scaricare nulla
       `<div class="comp-campi alt-risposte"><label class="fl comp-campo comp-note">Foglio Google delle risposte del modulo (link): per aggiornare quando arrivano nuove risposte` +
@@ -710,6 +737,10 @@ const SchedaCompresenze = (() => {
   }
   function cambioAltOpzione(el) {
     if (el.dataset.alopz === 'risposte') { alt.risposte = el.value.trim(); salvaPrefAlt(); return; }   // solo il link: niente da ridisegnare
+    if (el.dataset.alopz === 'colgrad') {   // un'altra colonna di punteggio nel file della graduatoria
+      try { altApplicaGraduatoria(Number(el.value)); } catch (e) { messaggio = '⚠️ ' + String(e && e.message || e); }
+      disegna(); return;
+    }
     if (el.dataset.alcrit !== undefined) alt.criteri[Number(el.dataset.alcrit)].attivo = el.checked;
     else if (el.dataset.alopz === 'limite') alt.limite = el.value === '' ? '' : String(Math.max(1, parseInt(el.value, 10) || 1));
     else if (el.dataset.alopz === 'alta') alt.alta = el.value === '1';
@@ -840,6 +871,7 @@ const SchedaCompresenze = (() => {
   function cambio(e) {
     const el = e.target;
     if (el.dataset.alfile !== undefined) { const f = el.files && el.files[0]; el.value = ''; if (f) altImporta(f); return; }
+    if (el.dataset.algrad !== undefined) { const f = el.files && el.files[0]; el.value = ''; if (f) altGraduatoria(f); return; }
     if (el.dataset.al !== undefined && el.dataset.campo) { cambioAlt(el); return; }
     if (el.dataset.alcrit !== undefined || el.dataset.alopz !== undefined) { cambioAltOpzione(el); return; }
     if (el.dataset.g !== undefined && el.dataset.campo) { cambioGruppo(el); return; }
@@ -867,6 +899,7 @@ const SchedaCompresenze = (() => {
         if (!e.target.classList) return;
         if (e.target.classList.contains('comp-gruppi')) gruppiAperti = e.target.open;
         else if (e.target.classList.contains('comp-alt')) alt.aperto = e.target.open;
+        else if (e.target.classList.contains('comp-contrai')) { const k = e.target.dataset.chiave; if (e.target.open) gruppiChiusi.delete(k); else gruppiChiusi.add(k); }
       }, true);
     }
     if (typeof Compresenze === 'undefined' || typeof NomiDocenti === 'undefined') {
