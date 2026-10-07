@@ -63,3 +63,6 @@
   .alt-opzioni { grid-template-columns: 1fr 1fr 2fr; }
 }
 .alt-esclusioni { display: grid; gap: 6px; margin: 6px 0; }
+/* il riquadro dell'Alternativa sta DENTRO la scheda del gruppo, separato da una riga */
+.comp-alt { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.comp-alt summary h4 { display: inline; margin: 0; font-size: 1.05em; }

@@ -14,7 +14,7 @@
   Per ogni ora si controlla che la classe abbia lezione, che il docente sia libero e (Alternativa) che in quell'ora
   ci sia la materia in parallelo. Le ore con un tipo che non è in nessun gruppo stanno in «Altre compresenze».
   Il SOSTEGNO ha una griglia sua (scheda «Sostegno» del Foglio, vedi sotto).
-  L'ALTERNATIVA ha in più il riquadro «disponibilità dei docenti e bozza di copertura» (calcoli in alternativa.js): si carica il file
+  L'ALTERNATIVA ha in più il riquadro «disponibilità dei docenti e bozza di copertura» (dentro la scheda del gruppo; calcoli in alternativa.js): si carica il file
   delle risposte del modulo, si controlla che ogni ora indicata sia tra quelle possibili e si simula una prima copertura con criteri.
   Nel Foglio, accanto al codice, si scrive anche il nome del docente (se i nomi sono stati caricati con «👁 Nomi»):
   i nomi veri stanno solo su Drive, mai su GitHub né sul dispositivo.
@@ -401,7 +401,7 @@ const SchedaCompresenze = (() => {
       (mie.length ? `<ol class="comp-righe">${mie.map(x => rigaHtml(x.r, x.i, g)).join('')}</ol>` : '<p class="hint">Nessuna ora inserita.</p>') +
       `<div class="row comp-azioni"><button type="button" class="btn" data-azione="aggiungi" data-gruppo="${gid}">+ Aggiungi un'ora</button>` +
       (g && g.nelleOreDi ? `<button type="button" class="btn" data-azione="parallelo" data-gruppo="${gid}">Aggiungi le ore di ${esc(g.nelleOreDi)} che mancano</button>` : '') +
-      `</div></section>`;
+      `</div>` + (g && eAlternativa(g) ? altHtml(g) : '') + `</section>`;
   }
 
   function disegna() {
@@ -420,7 +420,7 @@ const SchedaCompresenze = (() => {
         `<span class="hint">${complete} ore di compresenza · ${righe.length - complete} da completare${modificato ? ' · <b>ci sono modifiche non salvate</b>' : ''}</span></div>`;
     }
     const schede = stato === 'pronto'
-      ? `${gruppiHtml()}${gruppi().map((g, i) => schedaHtml(g, i) + (eAlternativa(g) ? altHtml(g) : '')).join('')}${sostegnoHtml()}${schedaHtml(null)}` +
+      ? `${gruppiHtml()}${gruppi().map((g, i) => schedaHtml(g, i)).join('')}${sostegnoHtml()}${schedaHtml(null)}` +
         `<p class="hint">Ogni ora è di un docente: le righe senza docente, giorno o ora restano «da completare» e l'app non le mostra. ` +
         `Nell'app Luis@i le compresenze si vedono spuntando «Compresenze».</p>`
       : '';
@@ -676,8 +676,8 @@ const SchedaCompresenze = (() => {
         `<button type="button" class="btn" data-azione="alt-scarta">Scarta la bozza</button></div></div>`;
     }
     const aperto = alt.aperto === undefined ? true : alt.aperto;
-    return `<details class="card comp-scheda comp-alt"${aperto ? ' open' : ''}>` +
-      `<summary><h3>Alternativa: disponibilità dei docenti e bozza di copertura</h3></summary>` +
+    return `<details class="comp-alt"${aperto ? ' open' : ''}>` +
+      `<summary><h4>Disponibilità dei docenti e bozza di copertura</h4></summary>` +
       `<p class="hint">Carica il file delle risposte del modulo: per ogni docente controllo che le ore indicate siano tra quelle in cui può stare (libero e non della classe, come nell'elenco qui sopra) ` +
       `e poi puoi simulare una prima copertura delle ${scoperte} ore ancora senza docente. I nomi restano solo su Drive.</p>` +
       `<div class="row comp-azioni"><label class="btn alt-file">📥 Carica le disponibilità (.xlsx, .ods, .csv)<input type="file" accept=".xlsx,.ods,.csv" data-alfile hidden></label>` +
