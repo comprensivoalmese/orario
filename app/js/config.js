@@ -8,7 +8,7 @@ window.CONFIG = {
 
   // Versione dell'app, scritta in fondo alla pagina. Quando si pubblicano modifiche importanti conviene
   // cambiarla qui E nel nome CACHE di sw.js: così tutti i dispositivi scaricano l'app da capo.
-  versioneApp: '2026-10-05.2',
+  versioneApp: '2026-10-07.1',
 
   // Solo gli account di questo dominio possono entrare
   dominio: 'comprensivoalmese.it',
@@ -68,6 +68,10 @@ window.CONFIG = {
   // non va mai su GitHub. Vuoto = schede dentro il Foglio Compresenze. Per nasconderlo anche su Drive agli studenti,
   // si può mettere in un Foglio a parte condiviso solo con i docenti e scrivere qui il suo ID.
   fileSostegno: '',
+  // ALTERNATIVA: la scheda «Disponibilità Alternativa» (disponibilità dei docenti, esclusioni passate, classi dell'anno scorso,
+  // punteggio della graduatoria: nomi veri e dati personali, mai su GitHub). Vuoto = scheda dentro il Foglio Compresenze; per
+  // tenerla riservata si può mettere in un Foglio a parte condiviso solo con chi usa Orario Facile e scrivere qui il suo ID.
+  fileAlternativa: '',
   // Gruppi PROPOSTI per la scheda «Compresenze» di Orario Facile (orario-facile/scheda-compresenze.js), validi per qualsiasi
   // scuola: si usano solo finché nel Foglio Compresenze non c'è la scheda «Gruppi». Le ore previste e i docenti di ogni gruppo
   // cambiano da scuola a scuola (numero di classi, cattedre di potenziamento, ore eccedenti…): si scrivono nella scheda, che li salva

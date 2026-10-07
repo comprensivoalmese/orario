@@ -685,6 +685,7 @@ td input[type=number]{width:64px}
 <!-- Scheda Sostituzioni: lettura dell'orario (dall'app Luis@i) e file della cartella sostituzioni/ -->
 <script src="../app/js/dati.js"></script>
 <script src="../app/js/compresenze.js"></script>
+<script src="alternativa.js"></script>
 <script src="scheda-compresenze.js"></script>
 <script src="sintesi.js"></script>
 <script src="../app/js/piantine.js"></script>
@@ -1752,7 +1753,8 @@ function renderCompresenze(){
   SchedaCompresenze.monta(box, {
     orario: () => Dati.normalizza(S),
     email: () => { const s = typeof Accesso !== 'undefined' && Accesso.sessione ? Accesso.sessione() : null; return s ? s.email : ''; },
-    nome: codice => nomeVero(codice) ? nomeVero(codice).completo : ''
+    nome: codice => nomeVero(codice) ? nomeVero(codice).completo : '',
+    nomi: () => NOMI
   });
 }
 

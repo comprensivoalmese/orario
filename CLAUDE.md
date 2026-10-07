@@ -52,6 +52,18 @@ Le parti del progetto:
   e la scheda «Gruppi» (gruppi, ore previste e docenti previsti di QUESTA scuola: cambiano da scuola a scuola, quindi
   stanno su Drive e non nel codice; `CONFIG.gruppiCompresenze` contiene solo i gruppi proposti, senza numeri né codici).
   Un gruppo con «nelle ore di» una materia (Alternativa → Religione) conta da solo le ore previste nell'orario.
+  **Alternativa: disponibilità e bozza di copertura** (dal 07/10/2026, riquadro dentro il gruppo Alternativa della scheda 8;
+  calcoli in `orario-facile/alternativa.js`, interfaccia in `scheda-compresenze.js`): «Carica le disponibilità» legge il file delle
+  risposte del modulo (Cognome e Nome, giorni con le ore «3, 4, 6», «Oppure: Nessuna disponibilità»; serve «👁 Nomi» per riconoscere i
+  docenti dal nome, `ctx.nomi()`), le salva nella scheda **«Disponibilità Alternativa»** del Foglio (`CONFIG.fileAlternativa`, vuoto =
+  Foglio Compresenze; nomi veri e punteggi: solo su Drive) e controlla ogni ora: «nell'elenco» = per quel giorno e ora c'è una classe con
+  Religione dove il docente è libero e non è della classe (`motivoLibero`, la stessa regola della tendina). «▶ Simula la copertura»
+  assegna le ore di Religione ancora senza docente con un flusso a costo minimo (BigInt, ordine dei criteri rispettato): sempre prima
+  coprire più ore possibile, poi i criteri spuntati e ordinati (▲▼): 1 priorità per le esclusioni degli anni passati, 2 accontentare il
+  maggior numero di docenti, 3 continuità sulla classe dell'anno scorso (le classi «salgono» di un anno: la 1A di allora è la 2A di oggi),
+  4 punteggio di graduatoria (più alto o più basso = precedenza); infine equilibrio delle ore (limite per docente automatico o scelto).
+  Per ogni docente si scrivono (nel riquadro o nel Foglio) esclusioni, classi dell'anno scorso e punteggio. «Applica la bozza» scrive le
+  righe nel gruppo (poi «Salva sul Foglio»). Prove: `.claude/test-alternativa.html` e `.claude/test-scheda-alternativa.html` (locali).
   **Sostegno** (dato sanitario, GDPR): griglia «Sostegno» (un docente per riga, giorni × ore, in ogni cella la classe) e scheda
   «Sostegno classi» (spunta e ore previste) nel Foglio Compresenze o in `CONFIG.fileSostegno`; nell'app solo per docenti e
   modificatori, solo in memoria; «Scarica orario.json» di Orario Facile toglie le compresenze «SOS…». Mai su GitHub.

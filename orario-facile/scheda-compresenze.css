@@ -44,3 +44,21 @@
   .comp-campi.comp-campi-gruppo { grid-template-columns: minmax(170px, 1.6fr) .8fr 1.1fr 1.4fr 2fr auto; }
   .comp-codice, .comp-note, .comp-tipo { grid-column: auto; }
 }
+
+/* Alternativa: disponibilità dei docenti, criteri e bozza di copertura */
+.comp-alt summary { cursor: pointer; list-style: revert; }
+.comp-alt summary h3 { display: inline; }
+.comp-alt[open] summary { margin-bottom: 6px; }
+.comp-alt h4 { margin: 14px 0 4px; }
+.alt-file { cursor: pointer; }
+.alt-ore { gap: 6px; margin: 4px 0; }
+.alt-doc .alt-criteri-doc { margin-top: 6px; }
+.alt-criteri { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.alt-criterio { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.alt-opzioni { margin-top: 8px; }
+.alt-bozza { margin-top: 12px; padding-top: 4px; border-top: 1px solid var(--line); }
+.alt-sintesi { gap: 6px; margin: 4px 0 8px; }
+@media (min-width: 700px) {
+  .alt-criteri-doc { grid-template-columns: repeat(3, 1fr); }
+  .alt-opzioni { grid-template-columns: 1fr 1fr 2fr; }
+}

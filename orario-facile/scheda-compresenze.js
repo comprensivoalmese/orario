@@ -14,6 +14,8 @@
   Per ogni ora si controlla che la classe abbia lezione, che il docente sia libero e (Alternativa) che in quell'ora
   ci sia la materia in parallelo. Le ore con un tipo che non è in nessun gruppo stanno in «Altre compresenze».
   Il SOSTEGNO ha una griglia sua (scheda «Sostegno» del Foglio, vedi sotto).
+  L'ALTERNATIVA ha in più il riquadro «disponibilità dei docenti e bozza di copertura» (calcoli in alternativa.js): si carica il file
+  delle risposte del modulo, si controlla che ogni ora indicata sia tra quelle possibili e si simula una prima copertura con criteri.
   Nel Foglio, accanto al codice, si scrive anche il nome del docente (se i nomi sono stati caricati con «👁 Nomi»):
   i nomi veri stanno solo su Drive, mai su GitHub né sul dispositivo.
 
@@ -120,6 +122,7 @@ const SchedaCompresenze = (() => {
         }
       } catch (e) { /* scheda «Gruppi» assente: gruppi proposti */ }
       await caricaSostegno(t);
+      await caricaAlt(t);
       // i vecchi nomi del tipo (es. «Tempo prolungato») diventano quelli del gruppo
       righe.forEach(r => { const g = gruppoDi(r.tipo); if (g) r.tipo = g.tipo; });
       modificato = false; stato = 'pronto';
@@ -149,6 +152,7 @@ const SchedaCompresenze = (() => {
         await chiama(t, ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests: [{ addSheet: { properties: { title: 'Gruppi', index: schede.length } } }] }) });
       }
       await salvaSostegnoClassi(t, schede);
+      await salvaAlt(t, schede);
       const valGruppi = [TITOLI_GRUPPI].concat(gruppi().map(g => [g.tipo, g.previste === '' ? '' : Number(g.previste), scriviDocenti(g.docenti), g.nelleOreDi, g.spiegazione, g.senzaClasse ? 'SI' : 'NO', g.luogo || '']));
       await chiama(t, '/values/' + encodeURIComponent("'Gruppi'!A1:G100") + ':clear', { method: 'POST', body: '{}' });
       await chiama(t, '/values/' + encodeURIComponent("'Gruppi'!A1:G" + valGruppi.length) + '?valueInputOption=RAW',
@@ -320,14 +324,19 @@ const SchedaCompresenze = (() => {
     e non deve essere un docente di quella classe. Negli altri gruppi la tendina mostra tutti i docenti.
   */
   const eAlternativa = g => !!g && semplice(g.tipo).includes('alternativa');
-  function motivoEscluso(e, r, g, classe) {
-    if (!eAlternativa(g) || !r.giorno || !r.ora) return '';
-    const ora = Number(r.ora), c = codiceDi(e);
-    if (curricolari().some(l => l.giorno === r.giorno && l.ora === ora && l.docente === e.id)) return 'occupato';
-    if (righe.some(x => x !== r && x.codice === c && x.giorno === r.giorno && Number(x.ora) === ora)) return 'occupato';
-    if ((griglia || []).some(x => x.codice === c && x.giorno === r.giorno && x.ora === ora)) return 'occupato';
+  // Il docente «e» può fare l'Alternativa in questa classe, giorno e ora? Restituisce '' se sì, altrimenti il motivo.
+  // «rigaDaIgnorare» è la riga che si sta scegliendo (non conta come altro impegno).
+  function motivoLibero(e, giorno, ora, classe, rigaDaIgnorare) {
+    const c = codiceDi(e);
+    if (curricolari().some(l => l.giorno === giorno && l.ora === ora && l.docente === e.id)) return 'occupato';
+    if (righe.some(x => x !== rigaDaIgnorare && x.codice === c && x.giorno === giorno && Number(x.ora) === ora)) return 'occupato';
+    if ((griglia || []).some(x => x.codice === c && x.giorno === giorno && x.ora === ora)) return 'occupato';
     if (classe && curricolari().some(l => l.docente === e.id && l.classe === classe.id)) return 'docente della classe';
     return '';
+  }
+  function motivoEscluso(e, r, g, classe) {
+    if (!eAlternativa(g) || !r.giorno || !r.ora) return '';
+    return motivoLibero(e, r.giorno, Number(r.ora), classe, r);
   }
 
   function rigaHtml(r, i, g) {
@@ -411,19 +420,254 @@ const SchedaCompresenze = (() => {
         `<span class="hint">${complete} ore di compresenza · ${righe.length - complete} da completare${modificato ? ' · <b>ci sono modifiche non salvate</b>' : ''}</span></div>`;
     }
     const schede = stato === 'pronto'
-      ? `${gruppiHtml()}${gruppi().map((g, i) => schedaHtml(g, i)).join('')}${sostegnoHtml()}${schedaHtml(null)}` +
+      ? `${gruppiHtml()}${gruppi().map((g, i) => schedaHtml(g, i) + (eAlternativa(g) ? altHtml(g) : '')).join('')}${sostegnoHtml()}${schedaHtml(null)}` +
         `<p class="hint">Ogni ora è di un docente: le righe senza docente, giorno o ora restano «da completare» e l'app non le mostra. ` +
         `Nell'app Luis@i le compresenze si vedono spuntando «Compresenze».</p>`
       : '';
     // si ricorda dov'era il cursore, per rimetterlo lì dopo aver ridisegnato
-    const a = document.activeElement, fuoco = a && box.contains(a) ? { i: a.dataset.i, g: a.dataset.g, sc: a.dataset.sc, campo: a.dataset.campo, azione: a.dataset.azione, gruppo: a.dataset.gruppo } : null;
+    const a = document.activeElement, fuoco = a && box.contains(a) ? { i: a.dataset.i, g: a.dataset.g, sc: a.dataset.sc, al: a.dataset.al, alcrit: a.dataset.alcrit, alopz: a.dataset.alopz, campo: a.dataset.campo, azione: a.dataset.azione, gruppo: a.dataset.gruppo } : null;
     box.innerHTML = `<div class="card no-print">${corpo}<p class="comp-messaggio" role="status" aria-live="polite">${esc(messaggio)}</p></div>${schede}`;
     if (fuoco) {
-      const sel = fuoco.campo ? (fuoco.sc !== undefined ? `[data-sc="${fuoco.sc}"][data-campo="${fuoco.campo}"]` : fuoco.g !== undefined ? `[data-g="${fuoco.g}"][data-campo="${fuoco.campo}"]` : `[data-i="${fuoco.i}"][data-campo="${fuoco.campo}"]`)
+      const sel = fuoco.alcrit !== undefined ? `[data-alcrit="${fuoco.alcrit}"]` : fuoco.alopz !== undefined ? `[data-alopz="${fuoco.alopz}"]`
+        : fuoco.campo ? (fuoco.al !== undefined ? `[data-al="${fuoco.al}"][data-campo="${fuoco.campo}"]` : fuoco.sc !== undefined ? `[data-sc="${fuoco.sc}"][data-campo="${fuoco.campo}"]` : fuoco.g !== undefined ? `[data-g="${fuoco.g}"][data-campo="${fuoco.campo}"]` : `[data-i="${fuoco.i}"][data-campo="${fuoco.campo}"]`)
         : fuoco.azione ? `[data-azione="${fuoco.azione}"]${fuoco.gruppo ? `[data-gruppo="${fuoco.gruppo}"]` : fuoco.i ? `[data-i="${fuoco.i}"]` : ''}` : '';
       const el = sel && box.querySelector(sel);
       if (el) el.focus({ preventScroll: true });
     }
+  }
+
+  /* ---------- ALTERNATIVA: disponibilità dei docenti e bozza di copertura ----------
+     Le disponibilità arrivano dal file delle risposte del modulo (si carica con «Carica le disponibilità») e stanno nella scheda
+     «Disponibilità Alternativa» del Foglio (CONFIG.fileAlternativa, oppure il Foglio Compresenze): per ogni docente le ore
+     di ogni giorno e i dati dei criteri (esclusioni passate, classi dell'anno scorso, punteggio della graduatoria).
+     Hanno i nomi veri: restano solo su Drive. I calcoli sono in alternativa.js. */
+  const GIORNI_ALT = Alternativa.GIORNI;
+  const TITOLI_ALT = ['Codice docente', 'Docente'].concat(GIORNI_ALT, ['Nessuna disponibilità (SI/NO)', 'Esclusioni negli anni passati', 'Classi dell\'anno scorso', 'Punteggio graduatoria']);
+  const SCHEDA_ALT = 'Disponibilità Alternativa';
+  const CHIAVE_PREF_ALT = 'orariofacile.alternativa';
+  let alt = { dispo: [], nelFoglio: false, bozza: null, criteri: Alternativa.CRITERI.map(c => ({ id: c.id, attivo: true })), limite: '', salgono: true, alta: true };
+  try {
+    const p = JSON.parse(localStorage.getItem(CHIAVE_PREF_ALT) || 'null');
+    if (p && Array.isArray(p.criteri)) {
+      const noti = p.criteri.filter(c => Alternativa.CRITERI.some(x => x.id === c.id));
+      alt.criteri = noti.concat(Alternativa.CRITERI.filter(x => !noti.some(c => c.id === x.id)).map(x => ({ id: x.id, attivo: true })));
+      alt.limite = p.limite || ''; alt.salgono = p.salgono !== false; alt.alta = p.alta !== false;
+    }
+  } catch (e) { /* senza memoria si parte dalle impostazioni proposte */ }
+  const salvaPrefAlt = () => { try { localStorage.setItem(CHIAVE_PREF_ALT, JSON.stringify({ criteri: alt.criteri, limite: alt.limite, salgono: alt.salgono, alta: alt.alta })); } catch (e) { /* va bene lo stesso */ } };
+
+  const fileAlt = () => CONFIG.fileAlternativa || CONFIG.fileCompresenze;
+  async function chiamaAlt(t, percorso, opzioni) {
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(fileAlt()) + percorso,
+      Object.assign({ headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' } }, opzioni || {}));
+    if (!r.ok) throw new Error(spiega(r.status, await r.text()));
+    return r.json();
+  }
+  async function caricaAlt(t) {
+    alt.dispo = []; alt.nelFoglio = false; alt.bozza = null;
+    try {
+      const j = await chiamaAlt(t, '/values/' + encodeURIComponent("'" + SCHEDA_ALT + "'!A1:K200"));
+      alt.nelFoglio = true;
+      alt.dispo = (j.values || []).slice(1).filter(r => String(r[0] || '').trim() || String(r[1] || '').trim()).map(r => {
+        const giorni = {}; GIORNI_ALT.forEach((g, i) => { giorni[g] = Alternativa.testoOre(Alternativa.oreDa(r[2 + i])); });
+        return { codice: String(r[0] || '').trim().toUpperCase(), nome: String(r[1] || '').trim(), giorni,
+          nessuna: /^(si|sì|x|1|true|vero)$/i.test(String(r[7] || '').trim()), escl: String(r[8] || '').trim(),
+          classiPrima: String(r[9] || '').trim(), punteggio: String(r[10] || '').trim() };
+      });
+    } catch (e) { /* scheda assente: si parte dal file delle disponibilità */ }
+  }
+  async function salvaAlt(t, schedeCompresenze) {
+    if (!alt.dispo.length && !alt.nelFoglio) return;
+    const info = fileAlt() === CONFIG.fileCompresenze ? { sheets: schedeCompresenze.map(p => ({ properties: p })) } : await chiamaAlt(t, '?fields=sheets.properties(title,index)');
+    if (!(info.sheets || []).some(s => s.properties.title === SCHEDA_ALT) && !alt.nelFoglio) {
+      await chiamaAlt(t, ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests: [{ addSheet: { properties: { title: SCHEDA_ALT } } }] }) });
+    }
+    const valori = [TITOLI_ALT].concat(alt.dispo.map(x => [x.codice, x.nome].concat(GIORNI_ALT.map(g => x.giorni[g] || ''),
+      [x.nessuna ? 'SI' : 'NO', x.escl === '' ? '' : (Alternativa.numero(x.escl) === null ? x.escl : Alternativa.numero(x.escl)), x.classiPrima,
+        x.punteggio === '' ? '' : (Alternativa.numero(x.punteggio) === null ? x.punteggio : Alternativa.numero(x.punteggio))])));
+    await chiamaAlt(t, '/values/' + encodeURIComponent("'" + SCHEDA_ALT + "'!A1:K200") + ':clear', { method: 'POST', body: '{}' });
+    await chiamaAlt(t, '/values/' + encodeURIComponent("'" + SCHEDA_ALT + "'!A1:K" + valori.length) + '?valueInputOption=RAW',
+      { method: 'PUT', body: JSON.stringify({ values: valori }) });
+    alt.nelFoglio = true;
+  }
+
+  // le ore di Religione (una per classe), che l'Alternativa deve coprire, con l'eventuale riga già scritta
+  function altSlots(g) {
+    const d = D(), visti = new Set(), ordineGiorno = giorno => { const i = GIORNI_ALT.indexOf(giorno); return i < 0 ? 9 : i; };
+    return lezioniDi(g.nelleOreDi).map(l => {
+      const classe = d.classe.find(c => c.id === l.classe), nome = classe ? classe.nome : nomeDi('classe', l.classe);
+      const riga = righe.find(r => gruppoDi(r.tipo) === g && semplice(r.classe) === semplice(nome) && r.giorno === l.giorno && Number(r.ora) === l.ora);
+      return { id: l.giorno + '|' + l.ora + '|' + nome, giorno: l.giorno, ora: l.ora, classe: nome, classeObj: classe, riga };
+    }).filter(s => !visti.has(s.id) && visti.add(s.id))
+      .sort((a, b) => ordineGiorno(a.giorno) - ordineGiorno(b.giorno) || a.ora - b.ora || a.classe.localeCompare(b.classe, 'it', { numeric: true }));
+  }
+  const nomeAlt = codice => { const x = alt.dispo.find(y => y.codice === codice); return nomeVero(codice) || (x && x.nome) || codice; };
+
+  /*
+    Il controllo che hai chiesto: per ogni ora in cui un docente si è reso disponibile, è nell'elenco previsto?
+    «Nell'elenco» = per quel giorno e quell'ora c'è almeno una classe con Religione dove il docente è libero e non è della classe
+    (gli stessi docenti che la tendina dell'Alternativa propone). Per ogni ora: { giorno, ora, stato: 'ok' | 'no', testo }.
+  */
+  function altVerifica(x, slots, g) {
+    const e = x.codice ? D().docente.find(k => codiceDi(k) === x.codice) : null, voci = [];
+    GIORNI_ALT.forEach(giorno => Alternativa.oreDa(x.giorni[giorno]).forEach(ora => {
+      const qui = slots.filter(s => s.giorno === giorno && s.ora === ora);
+      let stato = 'no', testo;
+      if (!x.codice) testo = 'docente non riconosciuto';
+      else if (!e) testo = 'non è nell\'orario';
+      else if (!qui.length) testo = `in quest'ora nessuna classe ha ${g.nelleOreDi}`;
+      else {
+        const ris = qui.map(s => ({ s, m: s.riga && s.riga.codice === x.codice ? '' : s.riga && s.riga.codice ? 'già coperta da un altro docente' : motivoLibero(e, giorno, ora, s.classeObj, null) }));
+        const buone = ris.filter(r => !r.m);
+        if (buone.length) { stato = 'ok'; testo = 'nell\'elenco per: ' + buone.map(r => r.s.classe).join(', '); }
+        else testo = 'non nell\'elenco: ' + ris.map(r => `${r.s.classe} ${r.m}`).join('; ');
+      }
+      voci.push({ giorno, ora, stato, testo });
+    }));
+    return voci;
+  }
+
+  // dati per la simulazione: le ore ancora da coprire e, per ogni docente, in quali può stare
+  function altDatiSimulazione(g) {
+    const slots = altSlots(g), aperti = slots.filter(s => !(s.riga && s.riga.codice));
+    const docenti = alt.dispo.filter(x => x.codice && !x.nessuna).map(x => {
+      const e = D().docente.find(k => codiceDi(k) === x.codice);
+      const ok = e ? aperti.filter(s => Alternativa.oreDa(x.giorni[s.giorno]).includes(s.ora) && !motivoLibero(e, s.giorno, s.ora, s.classeObj, null)).map(s => s.id) : [];
+      return { codice: x.codice, escl: x.escl, classiPrima: Alternativa.classiDiOggi(x.classiPrima, alt.salgono), punteggio: x.punteggio,
+        gia: righe.filter(r => gruppoDi(r.tipo) === g && r.codice === x.codice).length, ok };
+    });
+    return { slots, aperti, docenti };
+  }
+  function altSimula(g) {
+    const dati = altDatiSimulazione(g);
+    const ris = Alternativa.simula({ slots: dati.aperti, docenti: dati.docenti, ordine: alt.criteri.filter(c => c.attivo).map(c => c.id), limite: alt.limite, graduatoriaAlta: alt.alta });
+    alt.bozza = { ris, aperti: dati.aperti, docenti: dati.docenti };
+    messaggio = '';
+  }
+  function altApplica(g) {
+    if (!alt.bozza) return;
+    let n = 0;
+    alt.bozza.ris.assegnazioni.forEach(a => {
+      const s = alt.bozza.aperti.find(x => x.id === a.slotId); if (!s) return;
+      const attuale = righe.find(r => gruppoDi(r.tipo) === g && semplice(r.classe) === semplice(s.classe) && r.giorno === s.giorno && Number(r.ora) === s.ora);
+      if (attuale) attuale.codice = a.codice;
+      else righe.push({ codice: a.codice, classe: s.classe, giorno: s.giorno, ora: s.ora, tipo: g.tipo, aula: '', note: '', nome: '' });
+      n++;
+    });
+    alt.bozza = null; modificato = true;
+    messaggio = `Bozza applicata: ${n} ore scritte qui sopra. Controllale e premi «Salva sul Foglio».`;
+  }
+
+  async function altImporta(file) {
+    try {
+      const nomi = ctx.nomi && ctx.nomi();
+      if (!nomi) { messaggio = '⚠️ Per riconoscere i docenti premi prima «👁 Nomi» in alto: i nomi veri restano solo in memoria.'; disegna(); return; }
+      const lette = Alternativa.leggiDisponibilita(await Foglio.leggiTabelle(file));
+      const vecchi = new Map(alt.dispo.map(x => [semplice(x.nome), x]));
+      alt.dispo = lette.map(x => {
+        const v = vecchi.get(semplice(x.nome));
+        return { codice: Alternativa.codiceDaNome(x.nome, nomi) || (v ? v.codice : ''), nome: x.nome, giorni: x.giorni, nessuna: x.nessuna,
+          escl: v ? v.escl : '', classiPrima: v ? v.classiPrima : '', punteggio: v ? v.punteggio : '' };
+      });
+      alt.bozza = null; modificato = true;
+      const senza = alt.dispo.filter(x => !x.codice).length;
+      messaggio = `Disponibilità lette: ${alt.dispo.length} docenti` + (senza ? `, ${senza} da riconoscere (scegli il docente nell'elenco)` : ', tutti riconosciuti') + '. Premi «Salva sul Foglio» per tenerle.';
+    } catch (e) { messaggio = '⚠️ ' + String(e && e.message || e); }
+    disegna();
+  }
+
+  function altHtml(g) {
+    if (!g.nelleOreDi) return '';
+    const slots = altSlots(g), scoperte = slots.filter(s => !(s.riga && s.riga.codice)).length;
+    const voci = alt.dispo.map(x => altVerifica(x, slots, g));
+    const tutte = [].concat(...voci), buone = tutte.filter(v => v.stato === 'ok').length;
+    const codiciOpz = D().docente.map(e => { const c = codiceDi(e), n = nomeDoc(c); return { v: c, t: n === c ? c : `${n} (${c})` }; }).sort((a, b) => a.t.localeCompare(b.t, 'it', { numeric: true }));
+    const abbr = giorno => giorno.slice(0, 3);
+    const righeDoc = alt.dispo.map((x, i) => {
+      const chips = voci[i].map(v => `<span class="tag ${v.stato === 'ok' ? 'ok' : 'warn'}" title="${esc(v.testo)}">${esc(abbr(v.giorno))} ${v.ora}ª ${v.stato === 'ok' ? '✓' : '⚠'}</span>`).join('');
+      const problemi = voci[i].filter(v => v.stato !== 'ok').map(v => `${abbr(v.giorno)} ${v.ora}ª: ${v.testo}`);
+      return `<li class="comp-riga alt-doc">` +
+        `<div class="row spread"><b>${esc(x.nome)}</b>` +
+        (x.codice ? `<span class="tag">${esc(x.codice)}</span>` : `<label class="fl comp-campo">Chi è?<select data-al="${i}" data-campo="codice">${opzioni(codiciOpz, '', '— scegli il docente —')}</select></label>`) +
+        `<button type="button" class="iconbtn" data-azione="alt-togli" data-i="${i}" title="Togli questo docente" aria-label="Togli ${esc(x.nome)}">✕</button></div>` +
+        `<div class="row alt-ore">${x.nessuna ? '<span class="tag">Nessuna disponibilità</span>' : (chips || '<span class="tag warn">Nessuna ora indicata</span>')}</div>` +
+        (problemi.length ? `<p class="hint">${problemi.map(esc).join(' · ')}</p>` : '') +
+        `<div class="comp-campi alt-criteri-doc">` +
+        `<label class="fl comp-campo">Esclusioni negli anni passati<input type="number" min="0" data-al="${i}" data-campo="escl" value="${esc(x.escl)}" placeholder="0"></label>` +
+        `<label class="fl comp-campo">Classi dell'anno scorso<input type="text" data-al="${i}" data-campo="classiPrima" value="${esc(x.classiPrima)}" placeholder="es. 1A, 2B"></label>` +
+        `<label class="fl comp-campo">Punteggio graduatoria<input type="text" inputmode="decimal" data-al="${i}" data-campo="punteggio" value="${esc(x.punteggio)}" placeholder="es. 32,5"></label>` +
+        `</div></li>`;
+    }).join('');
+    const criteri = alt.criteri.map((c, i) => {
+      const def = Alternativa.CRITERI.find(x => x.id === c.id);
+      return `<li class="alt-criterio"><label class="row comp-spunta"><input type="checkbox" data-alcrit="${i}"${c.attivo ? ' checked' : ''}> <span><b>${i + 1}. ${esc(def.titolo)}</b><br><span class="hint">${esc(def.aiuto)}</span></span></label>` +
+        `<span class="row"><button type="button" class="iconbtn" data-azione="alt-su" data-i="${i}" title="Più importante"${i === 0 ? ' disabled' : ''} aria-label="Sposta su">▲</button>` +
+        `<button type="button" class="iconbtn" data-azione="alt-giu" data-i="${i}" title="Meno importante"${i === alt.criteri.length - 1 ? ' disabled' : ''} aria-label="Sposta giù">▼</button></span></li>`;
+    }).join('');
+    let bozza = '';
+    if (alt.bozza) {
+      const b = alt.bozza, ris = b.ris, daSlot = new Map(ris.assegnazioni.map(a => [a.slotId, a.codice]));
+      const righeB = b.aperti.map(s => {
+        const c = daSlot.get(s.id), d = c && b.docenti.find(x => x.codice === c);
+        const note = [];
+        if (d && Alternativa.classiDiOggi(alt.dispo.find(x => x.codice === c).classiPrima, alt.salgono).includes(semplice(s.classe))) note.push('riprende la classe');
+        if (d && Alternativa.numero(d.escl) > 0) note.push(`escluso ${Alternativa.numero(d.escl)} ${Alternativa.numero(d.escl) === 1 ? 'volta' : 'volte'}`);
+        const candidati = b.docenti.filter(x => x.ok.includes(s.id)).length;
+        return `<li class="comp-riga ${c ? '' : 'con-avvisi'}"><b>${esc(s.giorno)} ${s.ora}ª · ${esc(s.classe)}</b> → ` +
+          (c ? `${esc(nomeAlt(c))} <span class="tag">${esc(c)}</span>${note.map(n => ` <span class="tag ok">${esc(n)}</span>`).join('')}`
+             : `<span class="comp-avviso">nessun docente${candidati ? '' : ' disponibile'}</span>`) + `</li>`;
+      }).join('');
+      const conDispo = b.docenti.filter(d => d.ok.length).length;
+      const senzaOre = b.docenti.filter(d => !ris.contenti.includes(d.codice));
+      bozza = `<div class="alt-bozza"><h4>Bozza di copertura</h4>` +
+        `<div class="row alt-sintesi"><span class="tag${ris.scoperte.length ? '' : ' ok'}">${ris.assegnazioni.length} di ${b.aperti.length} ore coperte</span>` +
+        `<span class="tag">${ris.contenti.length} docenti con almeno un'ora (su ${conDispo} che potevano)</span><span class="tag">massimo ${ris.limite} ore a docente</span></div>` +
+        `<ul class="comp-righe">${righeB}</ul>` +
+        (senzaOre.length ? `<p class="hint">Senza ore: ${senzaOre.map(d => esc(nomeAlt(d.codice)) + (d.ok.length ? '' : ' (nessuna ora nell\'elenco)')).join(' · ')}.</p>` : '') +
+        `<div class="row comp-azioni"><button type="button" class="btn primary" data-azione="alt-applica"${ris.assegnazioni.length ? '' : ' disabled'}>✓ Applica la bozza alle ore qui sopra</button>` +
+        `<button type="button" class="btn" data-azione="alt-scarta">Scarta la bozza</button></div></div>`;
+    }
+    const aperto = alt.aperto === undefined ? true : alt.aperto;
+    return `<details class="card comp-scheda comp-alt"${aperto ? ' open' : ''}>` +
+      `<summary><h3>Alternativa: disponibilità dei docenti e bozza di copertura</h3></summary>` +
+      `<p class="hint">Carica il file delle risposte del modulo: per ogni docente controllo che le ore indicate siano tra quelle in cui può stare (libero e non della classe, come nell'elenco qui sopra) ` +
+      `e poi puoi simulare una prima copertura delle ${scoperte} ore ancora senza docente. I nomi restano solo su Drive.</p>` +
+      `<div class="row comp-azioni"><label class="btn alt-file">📥 Carica le disponibilità (.xlsx, .ods, .csv)<input type="file" accept=".xlsx,.ods,.csv" data-alfile hidden></label>` +
+      (alt.dispo.length ? `<span class="tag${buone === tutte.length ? ' ok' : ''}">${alt.dispo.length} docenti · ${buone} ore su ${tutte.length} nell'elenco</span>` : '') + `</div>` +
+      (alt.dispo.length ? `<ol class="comp-righe">${righeDoc}</ol>` : '<p class="hint">Nessuna disponibilità caricata.</p>') +
+      (alt.dispo.length ? `<h4>Criteri della simulazione</h4><p class="hint">Spunta quelli da usare e mettili in ordine: il primo conta più del secondo, e così via. Prima di tutto si copre il maggior numero di ore possibile.</p>` +
+        `<ol class="alt-criteri">${criteri}</ol>` +
+        `<div class="comp-campi alt-opzioni">` +
+        `<label class="fl comp-campo">Massimo ore per docente<input type="number" min="1" data-alopz="limite" value="${esc(alt.limite)}" placeholder="automatico"></label>` +
+        `<label class="fl comp-campo">Punteggio di graduatoria<select data-alopz="alta"><option value="1"${alt.alta ? ' selected' : ''}>più alto = precedenza</option><option value="0"${alt.alta ? '' : ' selected'}>più basso = precedenza</option></select></label>` +
+        `<label class="row comp-campo comp-note" style="gap:6px"><input type="checkbox" data-alopz="salgono"${alt.salgono ? ' checked' : ''}> Le classi dell'anno scorso salgono di un anno (la 1A di allora è la 2A di oggi)</label></div>` +
+        `<div class="row comp-azioni"><button type="button" class="btn primary" data-azione="alt-simula">▶ Simula la copertura</button></div>` + bozza : '') +
+      `</details>`;
+  }
+  function cambioAlt(el) {
+    const x = alt.dispo[Number(el.dataset.al)]; if (!x) return;
+    x[el.dataset.campo] = el.dataset.campo === 'codice' ? el.value.trim().toUpperCase() : el.value.trim();
+    alt.bozza = null; modificato = true; messaggio = '';
+    disegna();
+  }
+  function cambioAltOpzione(el) {
+    if (el.dataset.alcrit !== undefined) alt.criteri[Number(el.dataset.alcrit)].attivo = el.checked;
+    else if (el.dataset.alopz === 'limite') alt.limite = el.value === '' ? '' : String(Math.max(1, parseInt(el.value, 10) || 1));
+    else if (el.dataset.alopz === 'alta') alt.alta = el.value === '1';
+    else if (el.dataset.alopz === 'salgono') alt.salgono = el.checked;
+    alt.bozza = null; salvaPrefAlt(); disegna();
+  }
+  function clicAlt(azione, b) {
+    const g = gruppi().find(eAlternativa);
+    if (azione === 'alt-simula' && g) altSimula(g);
+    else if (azione === 'alt-applica' && g) altApplica(g);
+    else if (azione === 'alt-scarta') alt.bozza = null;
+    else if (azione === 'alt-togli') { alt.dispo.splice(Number(b.dataset.i), 1); alt.bozza = null; modificato = true; }
+    else if (azione === 'alt-su' || azione === 'alt-giu') {
+      const i = Number(b.dataset.i), j = azione === 'alt-su' ? i - 1 : i + 1;
+      if (j >= 0 && j < alt.criteri.length) { [alt.criteri[i], alt.criteri[j]] = [alt.criteri[j], alt.criteri[i]]; salvaPrefAlt(); alt.bozza = null; }
+    }
+    disegna();
   }
 
   /* ---------- azioni ---------- */
@@ -504,6 +748,7 @@ const SchedaCompresenze = (() => {
   function clic(e) {
     const b = e.target.closest('[data-azione]'); if (!b || b.disabled) return;
     const azione = b.dataset.azione;
+    if (azione.startsWith('alt-')) { clicAlt(azione, b); return; }
     if (azione === 'collega') carica();   // il tocco permette a Google di aprire la finestra del permesso
     else if (azione === 'salva') salva();
     else if (azione === 'ricarica') {
@@ -530,6 +775,9 @@ const SchedaCompresenze = (() => {
 
   function cambio(e) {
     const el = e.target;
+    if (el.dataset.alfile !== undefined) { const f = el.files && el.files[0]; el.value = ''; if (f) altImporta(f); return; }
+    if (el.dataset.al !== undefined && el.dataset.campo) { cambioAlt(el); return; }
+    if (el.dataset.alcrit !== undefined || el.dataset.alopz !== undefined) { cambioAltOpzione(el); return; }
     if (el.dataset.g !== undefined && el.dataset.campo) { cambioGruppo(el); return; }
     if (el.dataset.sc !== undefined && el.dataset.campo) { cambioSostegno(el); return; }
     if (el.dataset.i === undefined || !el.dataset.campo) return;
@@ -551,7 +799,11 @@ const SchedaCompresenze = (() => {
       box.addEventListener('click', clic);
       box.addEventListener('change', cambio);
       // il riquadro dei gruppi resta aperto o chiuso anche quando la scheda si ridisegna («toggle» non risale: si ascolta in cattura)
-      box.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('comp-gruppi')) gruppiAperti = e.target.open; }, true);
+      box.addEventListener('toggle', e => {
+        if (!e.target.classList) return;
+        if (e.target.classList.contains('comp-gruppi')) gruppiAperti = e.target.open;
+        else if (e.target.classList.contains('comp-alt')) alt.aperto = e.target.open;
+      }, true);
     }
     if (typeof Compresenze === 'undefined' || typeof NomiDocenti === 'undefined') {
       box.innerHTML = '<p class="hint">La scheda non è disponibile: mancano i file app/js/compresenze.js o app/js/nomi.js.</p>'; return;
