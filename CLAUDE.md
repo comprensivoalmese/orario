@@ -70,6 +70,9 @@ Le parti del progetto:
   «Carica la graduatoria interna» (.xlsx/.ods/.csv; `Alternativa.leggiGraduatoria`/`abbinaPunteggi`) trova da sola intestazioni, nome e colonna del
   punteggio (si può cambiare colonna) e scrive i punteggi ai docenti riconosciuti dal nome; il file non si conserva. Le schede dei gruppi
   (Alternativa, Potenziamento L2…) si contraggono toccando il titolo (`gruppiChiusi`).
+  Regole della graduatoria (scelte della scuola, 07/10/2026): senza punti = in cima alla graduatoria per la L. 104 (colonna «Precedenza L. 104»
+  = SI; il punteggio diventa «L.104» e passa avanti a tutti, con «più alto» come con «più basso»); 0 punti = anno di prova (resta 0); chi
+  non è nell'elenco (tempo determinato o altra scuola) vale 0.
   Per ogni docente si scrivono (nel riquadro o nel Foglio) esclusioni, classi dell'anno scorso e punteggio. «Applica la bozza» scrive le
   righe nel gruppo (poi «Salva sul Foglio»). Prove: `.claude/test-alternativa.html` e `.claude/test-scheda-alternativa.html` (locali).
   **Sostegno** (dato sanitario, GDPR): griglia «Sostegno» (un docente per riga, giorni × ore, in ogni cella la classe) e scheda

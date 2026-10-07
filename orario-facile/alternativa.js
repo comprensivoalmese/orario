@@ -122,7 +122,9 @@ const Alternativa = (() => {
     if (!colonne.length) throw new Error('Nel file ci sono le intestazioni ma non trovo punteggi numerici.');
     const migliore = colonne.reduce((a, b) => (b.rango >= a.rango ? b : a));
     const usata = colonna !== undefined && colonne.some(x => x.indice === Number(colonna)) ? Number(colonna) : migliore.indice;
-    const righe = corpo.map(r => ({ nome: nomeDi(r).trim().replace(/\s+/g, ' '), punteggio: numero(r[usata]) })).filter(r => r.punteggio !== null);
+    // la colonna «Precedenza L. 104» (SI): chi è in cima alla graduatoria per la 104 non ha punti ma passa avanti a tutti
+    const iPrec = h.findIndex(c => /104|precedenz/.test(c));
+    const righe = corpo.map(r => ({ nome: nomeDi(r).trim().replace(/\s+/g, ' '), punteggio: numero(r[usata]), primo: iPrec >= 0 && /^(si|sì|x|1|true|vero)$/i.test(String(r[iPrec] || '').trim()) })).filter(r => r.punteggio !== null || r.primo);
     return { righe, colonne: colonne.map(({ indice, titolo }) => ({ indice, titolo })), usata };
   }
 
@@ -139,7 +141,7 @@ const Alternativa = (() => {
       const miei = [d.nome].concat(nomiDi ? nomiDi(d) : []).filter(Boolean).map(n => new Set(parole(n)));
       let trovati = righe.map((r, k) => k).filter(k => miei.some(m => uguali(m, insiemi[k])));
       if (!trovati.length) trovati = righe.map((r, k) => k).filter(k => miei.some(m => contenuti(m, insiemi[k])));
-      if (trovati.length === 1) abbinati.push({ i, punteggio: righe[trovati[0]].punteggio });
+      if (trovati.length === 1) abbinati.push({ i, punteggio: righe[trovati[0]].primo ? 'L.104' : righe[trovati[0]].punteggio });
       else senza.push(i);
     });
     return { abbinati, senza };
@@ -190,8 +192,10 @@ const Alternativa = (() => {
     // 1) pesi: ogni criterio vale più di tutti quelli sotto di lui messi insieme
     const valorePrio = d => Math.max(0, Math.round(numero(d.escl) || 0));
     const punti = docenti.map(d => numero(d.punteggio));
-    const piuAlto = Math.max(0, ...punti.filter(p => p !== null));
-    const valoreGrad = d => { const p = numero(d.punteggio); const x = graduatoriaAlta ? (p === null ? 0 : p) : (p === null ? 0 : piuAlto - p); return Math.max(0, Math.round(x * 10)); };
+    const piuAlto = Math.max(0, ...punti.filter(p => p !== null));   // il punteggio più alto (per «più basso = precedenza» e per la L. 104)
+    // «L.104» (in cima alla graduatoria per la legge 104): precede chiunque, qualunque sia il verso del punteggio
+    const primo = d => /^\s*l\.?\s*104|precedenza/i.test(String(d.punteggio == null ? '' : d.punteggio));
+    const valoreGrad = d => { if (primo(d)) return Math.round(piuAlto * 10) + 10; const p = numero(d.punteggio); const x = graduatoriaAlta ? (p === null ? 0 : p) : (p === null ? 0 : piuAlto - p); return Math.max(0, Math.round(x * 10)); };
     const massimi = {
       priorita: Math.max(1, ...docenti.map(valorePrio)),
       accontentare: 1,

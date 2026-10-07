@@ -655,11 +655,13 @@ const SchedaCompresenze = (() => {
     const lettura = Alternativa.leggiGraduatoria(alt.grad.tabelle, colonna);
     alt.grad.lettura = lettura;
     const ab = Alternativa.abbinaPunteggi(alt.dispo, lettura.righe, x => { const v = x.codice && nomi && nomi.get(x.codice); return v ? [(v.cognome || '') + ' ' + (v.nome || '')] : []; });
-    ab.abbinati.forEach(a => { alt.dispo[a.i].punteggio = String(a.punteggio).replace('.', ','); });
+    ab.abbinati.forEach(a => { alt.dispo[a.i].punteggio = typeof a.punteggio === 'number' ? String(a.punteggio).replace('.', ',') : a.punteggio; });
+    // chi non è nell'elenco (tempo determinato o di un'altra scuola) non ha graduatoria interna: vale 0 punti
+    ab.senza.forEach(i => { alt.dispo[i].punteggio = '0'; });
     alt.bozza = null; modificato = true;
     const col = lettura.colonne.find(c => c.indice === lettura.usata);
     messaggio = `Graduatoria letta (colonna «${col.titolo}»): ${ab.abbinati.length} punteggi assegnati su ${alt.dispo.length} docenti` +
-      (ab.senza.length ? `. Senza punteggio (non trovati nel file): ${ab.senza.map(i => alt.dispo[i].nome).join(', ')}` : '') + '. Premi «Salva sul Foglio» per tenerli.';
+      (ab.senza.length ? `. Non sono nell'elenco e valgono 0 punti (tempo determinato o altra scuola): ${ab.senza.map(i => alt.dispo[i].nome).join(', ')}` : '') + '. Premi «Salva sul Foglio» per tenerli.';
   }
   async function altGraduatoria(file) {
     if (!alt.dispo.length) { messaggio = '⚠️ Carica prima le disponibilità: la graduatoria dà il punteggio ai docenti che si sono resi disponibili.'; disegna(); return; }
@@ -724,6 +726,7 @@ const SchedaCompresenze = (() => {
         const c = daSlot.get(s.id), d = c && b.docenti.find(x => x.codice === c);
         const note = [];
         if (d && Alternativa.classiDiOggi(alt.dispo.find(x => x.codice === c).classiPrima, alt.salgono).includes(semplice(s.classe))) note.push('riprende la classe');
+        if (d && /^\s*l\.?\s*104/i.test(String(d.punteggio))) note.push('precedenza L. 104');
         if (d && Alternativa.numero(d.escl) > 0) note.push(`escluso ${Alternativa.numero(d.escl)} ${Alternativa.numero(d.escl) === 1 ? 'volta' : 'volte'}`);
         const candidati = b.docenti.filter(x => x.ok.includes(s.id)).length;
         return `<li class="comp-riga ${c ? '' : 'con-avvisi'}"><b>${esc(s.giorno)} ${s.ora}ª · ${esc(s.classe)}</b> → ` +
