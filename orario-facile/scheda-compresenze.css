@@ -76,3 +76,12 @@
 .alt-riga-bozza { gap: 6px 8px; }
 .alt-riga-bozza select { max-width: 100%; }
 .alt-modifiche { gap: 6px; margin: 6px 0; }
+
+/* Tutte le schede della pagina uguali (Gruppi, Potenziamento L2, Alternativa, …, Sostegno): si aprono e si chiudono toccando
+   la testata; all'apertura della pagina sono chiuse. Il triangolino dice se sono aperte (▾) o chiuse (▸) */
+.comp-blocco > summary { cursor: pointer; list-style: none; gap: 8px; }
+.comp-blocco > summary::-webkit-details-marker { display: none; }
+.comp-blocco > summary h3 { margin: 0; font-size: 1.05rem; }
+.comp-blocco > summary h3::before { content: '▸ '; color: var(--text-3); }
+.comp-blocco[open] > summary h3::before { content: '▾ '; }
+.comp-blocco[open] > summary { margin-bottom: 8px; }

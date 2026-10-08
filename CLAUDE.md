@@ -50,6 +50,10 @@ Le parti del progetto:
   (`orario-facile/scheda-compresenze.js` e `.css`, indirizzo `#compresenze`; nell'app solo il collegamento «✎ Modifica» per i
   modificatori). È la maschera d'inserimento: legge e riscrive con la Sheets API il primo foglio del Foglio Compresenze
   e la scheda «Gruppi» (gruppi, ore previste e docenti previsti di QUESTA scuola: cambiano da scuola a scuola, quindi
+  [nella pagina tutte le schede – Gruppi e ore previste, un gruppo per scheda, Sostegno – sono uguali (`blocco()`, `.comp-blocco`), si
+  aprono e chiudono dalla testata e all'apertura sono CHIUSE (`blocchiAperti`, solo in memoria); i gruppi «senza classe» (Ricevimento
+  parenti, Disponibilità supplenze) hanno «📥 Carica da file» (`caricaSenzaClasse`: una riga per ora con Docente/Giorno/Ora/Luogo,
+  l'ora anche come orario d'inizio «10:05», oppure una colonna per giorno con le ore; per i docenti del file le ore si sostituiscono)];
   stanno su Drive e non nel codice; `CONFIG.gruppiCompresenze` contiene solo i gruppi proposti, senza numeri né codici).
   Un gruppo con «nelle ore di» una materia (Alternativa → Religione) conta da solo le ore previste nell'orario.
   **Alternativa: disponibilità e bozza di copertura** (dal 07/10/2026, riquadro dentro il gruppo Alternativa della scheda 8;
