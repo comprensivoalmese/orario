@@ -575,7 +575,12 @@ const QuarantaOre = (() => {
     const metti = (testoDocente, dd, testoImpegno, presente) => {
       if (presente === null || !dd) return;
       const d = trovaDocente(testoDocente, elenco);
-      if (!d) { if (String(testoDocente || '').trim()) esito.nonTrovati.add(String(testoDocente).trim()); return; }
+      if (!d) {
+        // più nomi nella stessa cella («Bonaudo, Rindone»): se il testo intero non è un docente si prova pezzo per pezzo
+        const pezzi = String(testoDocente || '').split(/\s*[,;\/\n]\s*|\s+e\s+/).filter(Boolean);
+        if (pezzi.length > 1) { pezzi.forEach(p => metti(p, dd, testoImpegno, presente)); return; }
+        if (String(testoDocente || '').trim()) esito.nonTrovati.add(String(testoDocente).trim()); return;
+      }
       esito.righe++;
       // «non atteso» si conta solo se il docente non era atteso a NESSUNO degli incontri della riga (es. due CdC lo stesso giorno)
       const delGiorno = incontri(dd, testoImpegno), suoi = delGiorno.filter(p => attesi.get(p.chiave).has(d.codice));
