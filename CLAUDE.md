@@ -212,7 +212,8 @@ Le parti del progetto:
   impegni non svuotati (max % orientativa di esonerati per impegno, anche per tipo, e minimo di presenti); stesso giorno (la stessa
   persona per tutti gli impegni della giornata); richieste dei docenti (proposte nel Foglio) accolte per prime; scaletta dei TIPI di
   impegno (▲▼, in alto i più importanti, «mai» = nessun esonero) e singoli incontri protetti (🔒, elenco con ricerca, `pref.protetti`
-  = chiavi «data|impegno»: nessun esonero da quell'incontro). Algoritmo: giri a turno (un esonero o una giornata per docente a
+  = chiavi «data|impegno»: nessun esonero da quell'incontro); ✕ su ogni proposta la toglie e rifà subito il piano (`pianoTolte`, opzione
+  `vietati` = «codice#data|impegno»; ↺ la rimette, «Azzera»). Algoritmo: giri a turno (un esonero o una giornata per docente a
   volta, così i posti si dividono in modo equo), conto esatto con `calcola` (sovrapposizioni), rifinitura (toglie gli esoneri di
   troppo, scambia un impegno lungo con uno più corto non più importante) e nuovo giro con i posti liberati. Si vede per docente e per
   impegno (presenze), si scarica in Excel e si salva con `scriviEsoneriTutti` (una sola scrittura) come proposte o già approvato.

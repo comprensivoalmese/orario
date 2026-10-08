@@ -166,6 +166,7 @@ const Scheda40 = (() => {
      e si salva nella scheda «Esoneri» del Foglio come proposte (da approvare) oppure già approvato. */
   const CHIAVE_PIANO = 'orariofacile.pianoEsoneri';
   let piano = null, pianoAperto = false;
+  let pianoTolte = [];   // proposte tolte a mano: «codice#data|impegno» (valgono finché non si scarta il piano)
   let pref = Object.assign({}, typeof PianoEsoneri !== 'undefined' ? PianoEsoneri.OPZIONI_PROPOSTE : {}, { ordine: [], perTipo: {} });
   try { const p = JSON.parse(localStorage.getItem(CHIAVE_PIANO) || 'null'); if (p) pref = Object.assign(pref, p); } catch (e) { /* si parte dalle proposte */ }
   const salvaPref = () => { try { localStorage.setItem(CHIAVE_PIANO, JSON.stringify(pref)); } catch (e) { /* va bene lo stesso */ } };
@@ -189,7 +190,7 @@ const Scheda40 = (() => {
   }
   function simulaPiano() {
     scaletta();
-    piano = PianoEsoneri.simula(risultato, Object.assign({}, pref), verificaEsatta);
+    piano = PianoEsoneri.simula(risultato, Object.assign({}, pref, { vietati: pianoTolte.slice() }), verificaEsatta);
     pianoAperto = true;
   }
 
@@ -252,7 +253,9 @@ const Scheda40 = (() => {
     const mostra = piano.docenti.filter(d => d.nuovi.length || d.manca.prime > 0.009 || d.manca.seconde > 0.009);
     const righe = mostra.map(d => {
       const giorni = new Map(); d.nuovi.forEach(x => { if (!giorni.has(x.data)) giorni.set(x.data, []); giorni.get(x.data).push(x); });
-      const elenco = [...giorni.entries()].map(([g, v]) => `<li><b>${esc(dataIt(g))}</b>: ${v.map(x => `${esc(x.impegno)} (${ore(x.ore)} h${x.richiesto ? ', chiesto dal docente' : ''})`).join('; ')}</li>`).join('');
+      // ogni proposta ha la ✕: toccandola si toglie e il piano si rifà subito senza di lei
+      const elenco = [...giorni.entries()].map(([g, v]) => `<li><b>${esc(dataIt(g))}</b>: ${v.map(x => `${esc(x.impegno)} (${ore(x.ore)} h${x.richiesto ? ', chiesto dal docente' : ''})` +
+        ` <button class="btn piccolo q40-togli-proposta" data-q40="pianoTogli" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}" title="Togli questa proposta e rifai il piano" aria-label="Togli l'esonero di ${esc(nomeDi(d.codice))} da ${esc(x.impegno)}">✕</button>`).join('; ')}</li>`).join('');
       const manca = d.manca.prime > 0.009 || d.manca.seconde > 0.009;
       return `<tr><th scope="row">${esc(nomeDi(d.codice))}<span class="q40-codice">${esc(d.codice)} · dovute ${ore(d.dovute)}</span></th>
         ${freccia(d.prima.prime, d.dopo.prime, d.soglia.prime)}${freccia(d.prima.seconde, d.dopo.seconde, d.soglia.seconde)}
@@ -264,7 +267,14 @@ const Scheda40 = (() => {
       return `<tr${sopra ? ' class="q40-proposto"' : ''}><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${x.protetto ? '🔒 ' : ''}${esc(x.impegno)}</td><td>${esc(x.tipo)}</td>
         <td class="num">${x.attesi}</td><td class="num">${x.gia ? x.gia + ' + ' : ''}${x.nuovi}</td><td class="num">${x.presenti}</td><td class="num">${x.pct}%</td></tr>`;
     }).join('');
-    return `<div class="q40-sintesi">
+    // le proposte tolte a mano, con ↺ per rimetterle
+    const tolte = pianoTolte.map((x, i) => {
+      const [codice, k] = [x.slice(0, x.indexOf('#')), x.slice(x.indexOf('#') + 1)], j = k.indexOf('|');
+      return `<span class="tag">✕ ${esc(nomeDi(codice))} – ${esc(dataIt(k.slice(0, j)))} ${esc(k.slice(j + 1))}
+        <button class="btn piccolo" data-q40="pianoRimetti" data-i="${i}" title="Rimetti questa proposta" aria-label="Rimetti">↺</button></span>`;
+    }).join('');
+    return `${tolte ? `<div class="q40-sintesi"><span class="hint">Proposte tolte da te:</span>${tolte}<button class="btn piccolo" data-q40="pianoAzzera">Azzera</button></div>` : ''}
+      <div class="q40-sintesi">
         <span class="tag${r.docentiSistemati === r.docentiOltre ? ' ok' : ''}">${r.docentiSistemati} di ${r.docentiOltre} docenti rientrano nella soglia</span>
         <span class="tag">${r.esoneri} esoneri · ${ore(r.ore)} ore · in ${r.giornate} giornate</span></div>
       ${r.mancano.length ? `<p class="q40-errore">Per ${r.mancano.length} docenti non basta: gli impegni possibili sono protetti («mai», priorità) o hanno già il massimo di esonerati. Prova ad alzare le percentuali o la riserva.</p>` : ''}
@@ -328,6 +338,7 @@ const Scheda40 = (() => {
       o.stessoGiorno ? 'Stesso giorno: la stessa persona per tutti gli impegni della giornata' : '',
       o.richieste ? 'Accolte per prime le richieste dei docenti' : '',
       o.usaPriorita ? 'Priorità (dal più importante): ' + scaletta().map(t => t.tipo + ((o.perTipo[t.id] || {}).mai ? ' (mai)' : '')).join(' › ') : '',
+      pianoTolte.length ? `Proposte tolte a mano: ${pianoTolte.length}` : '',
       (o.protetti || []).length ? 'Incontri protetti (nessun esonero): ' + o.protetti.map(k => { const i = k.indexOf('|'); return k.slice(0, i).split('-').reverse().join('/') + ' ' + k.slice(i + 1); }).join('; ') : ''
     ].filter(Boolean);
     const intest = [[{ v: `Piano di esoneri dalle 40+40 – ${foglio.anno || ''}`, stile: 'titolo' }], [`Simulazione del ${new Date().toLocaleDateString('it-IT')}`]].concat(criteri.map(c => [c]), [[]]);
@@ -530,7 +541,11 @@ const Scheda40 = (() => {
         else if (az === 'importa') box.querySelector('#q40File').click();
         // piano di esoneri
         else if (az === 'pianoSimula') { simulaPiano(); disegna(); }
-        else if (az === 'pianoScarta') { piano = null; disegna(); }
+        else if (az === 'pianoScarta') { piano = null; pianoTolte = []; disegna(); }
+        // togliere una proposta (o rimetterla) rifà subito il piano
+        else if (az === 'pianoTogli') { const x = b.dataset.codice + '#' + b.dataset.chiave; if (!pianoTolte.includes(x)) pianoTolte.push(x); simulaPiano(); disegna(); }
+        else if (az === 'pianoRimetti') { pianoTolte.splice(Number(b.dataset.i), 1); simulaPiano(); disegna(); }
+        else if (az === 'pianoAzzera') { pianoTolte = []; simulaPiano(); disegna(); }
         else if (az === 'pianoSalva') salvaPiano(false);
         else if (az === 'pianoApprova') salvaPiano(true);
         else if (az === 'pianoExcel') excelPiano();
