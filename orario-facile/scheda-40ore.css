@@ -54,3 +54,18 @@
 .q40-esoneri { margin-top: 16px; }
 .q40-esoneri label { display: inline-flex; gap: 6px; align-items: center; }
 .q40-esoneri input[type="search"] { min-width: 240px; padding: 4px 6px; font: inherit; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text); }
+
+/* Piano di esoneri (simulazione): criteri, scaletta dei tipi di impegno, risultato */
+.q40-piano { margin: 18px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.q40-piano summary { cursor: pointer; }
+.q40-piano summary h3 { display: inline; margin: 0; }
+.q40-criteri { display: grid; gap: 8px; margin: 10px 0; }
+.q40-criterio { display: flex; gap: 8px; align-items: flex-start; line-height: 1.5; }
+.q40-criterio input[type="checkbox"] { margin-top: 4px; }
+.q40-num { padding: 2px 4px; }
+.q40-scaletta { list-style: none; margin: 0 0 0 26px; padding: 0; display: grid; gap: 6px; }
+.q40-tipo { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.q40-tipo-reg { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.q40-sintesi { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.q40-elenco { margin: 0; padding-left: 16px; }
+.q40-piano-tab td { vertical-align: top; }

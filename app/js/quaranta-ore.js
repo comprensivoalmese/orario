@@ -373,17 +373,27 @@ const QuarantaOre = (() => {
     return r.json();
   }
   async function scriviEsoneri(foglio, codice, nome, voci, email) {
+    return scriviEsoneriTutti(foglio, [{ codice, nome, voci }], email);
+  }
+  /*
+    Come scriviEsoneri, ma per più docenti in una volta sola (una sola scrittura nel Foglio): lo usa il «Piano di esoneri»
+    della scheda 40+40. elenco = [{ codice, nome, voci: [{ data, impegno, ore, approvato }] }]; con «approvato: true» la riga
+    nasce già approvata, altrimenti resta com'era (approvata se lo era già, se no da approvare).
+  */
+  async function scriviEsoneriTutti(foglio, elenco, email) {
     if (!foglio.conEsoneri) {
       await chiamaFoglio(':batchUpdate', 'POST', { requests: [{ addSheet: { properties: { title: 'Esoneri' } } }] }, email);
       foglio.conEsoneri = true; foglio.righeEsoneri = [];
     }
-    const k = String(codice).toUpperCase();
-    const prima = foglio.esoneri.get(k) || new Map();
-    const altre = (foglio.righeEsoneri || []).filter(r => String(r[0] || '').trim().toUpperCase() !== k && r.some(c => c !== '' && c != null))
+    const codici = new Set(elenco.map(x => String(x.codice).toUpperCase()));
+    const altre = (foglio.righeEsoneri || []).filter(r => !codici.has(String(r[0] || '').trim().toUpperCase()) && r.some(c => c !== '' && c != null))
       .map(r => [r[0], r[1], dataIt(r[2]), r[3], r[4], dataIt(r[5]), r[6] == null ? '' : r[6]]);
     const oggi = new Date().toLocaleDateString('it-IT');
-    const nuove = voci.map(v => [k, nome || '', v.data.split('-').reverse().join('/'), v.impegno, v.ore, oggi,
-      (prima.get(v.data + '|' + v.impegno) || {}).approvato ? 'SI' : '']);
+    const nuove = [].concat(...elenco.map(x => {
+      const k = String(x.codice).toUpperCase(), prima = foglio.esoneri.get(k) || new Map();
+      return x.voci.map(v => [k, x.nome || '', v.data.split('-').reverse().join('/'), v.impegno, v.ore, oggi,
+        v.approvato || (prima.get(v.data + '|' + v.impegno) || {}).approvato ? 'SI' : '']);
+    }));
     const valori = [TITOLI_ESONERI].concat(altre, nuove);
     await chiamaFoglio('/values/' + encodeURIComponent("'Esoneri'!A:G") + ':clear', 'POST', {}, email);
     await chiamaFoglio('/values/' + encodeURIComponent(`'Esoneri'!A1:G${valori.length}`) + '?valueInputOption=USER_ENTERED', 'PUT', { values: valori }, email);
@@ -558,6 +568,6 @@ const QuarantaOre = (() => {
   const daPubblicato = (d, codice, nome) => Object.assign({}, d, { codice, nome,
     dettaglio: d.dettaglio.map(([data, orario, impegno, ore, conta, esonero]) => ({ data, orario, impegno, ore, conta, esonero: esonero === 1, proposto: esonero === 2 })) });
 
-  return { configurato, leggiFoglio, interpreta, classiDaOrario, calcola, scriviVisibile, scriviVisibileTutti, scriviFormazione, scriviEsoneri, scriviApprovato, togliEsoneri, esoneriPerImpegno,
+  return { configurato, leggiFoglio, interpreta, classiDaOrario, calcola, scriviVisibile, scriviVisibileTutti, scriviFormazione, scriviEsoneri, scriviEsoneriTutti, scriviApprovato, togliEsoneri, esoneriPerImpegno,
     excelDocente, leggiEsoneriDaExcel, daPubblicato, pubblica, datiDaPubblicare, leggiPubblicato, htmlDocente, NOMI_CONTA, dovute, file };
 })();
