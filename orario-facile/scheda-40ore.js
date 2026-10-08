@@ -48,6 +48,7 @@ const Scheda40 = (() => {
       const D = await opz.orario();
       if (typeof Compresenze !== 'undefined') { Compresenze.impostaSostegno(true); await Compresenze.scarica(); }
       foglio = await QuarantaOre.leggiFoglio(email);
+      foglio.margine = margine;   // minuti per spostarsi da una scuola all'altra (verifica di compatibilità)
       classiCorrenti = QuarantaOre.classiDaOrario(D);
       risultato = QuarantaOre.calcola(foglio, classiCorrenti);
       stato = '';
@@ -131,9 +132,9 @@ const Scheda40 = (() => {
   // docenti in COE: gli impegni presso le altre scuole (caricati dal loro file) e le sovrapposizioni di orario con i nostri
   function esterniHtml(d) {
     if (!(d.esterni || []).length) return d.scuola ? `<p class="hint">Impegni presso ${esc(d.scuola)}: non ancora caricati (sezione «Scuole di completamento» → «Carica il loro file»).</p>` : '';
-    const sovrapposti = new Set((d.conflitti || []).map(c => c.data + '|' + c.loro));
+    const sovrapposti = new Set((d.conflitti || []).filter(c => c.tipo !== 'senzaOrario').map(c => c.data + '|' + c.loro));
     return `<h4 class="q40-sottotitolo">Impegni presso le altre scuole <span class="hint">(non contano qui: prime ${ore(d.oreEsterne.prime)} h, seconde ${ore(d.oreEsterne.seconde)} h)</span></h4>` +
-      (d.conflitti.length ? `<p class="q40-errore">⚠ ${d.conflitti.length} sovrapposizioni di orario: ${esc(d.conflitti.map(c => dataIt(c.data) + ' «' + c.nostro + '» / «' + c.loro + '»').join('; '))}</p>` : '') +
+      (d.conflitti.length ? `<p class="q40-errore">⚠ ${d.conflitti.length} incompatibilità con il nostro piano: ${esc(d.conflitti.map(c => dataIt(c.data) + ' «' + c.nostro + '» / «' + c.loro + '» (' + problema(c) + ')').join('; '))}</p>` : '') +
       `<table class="q40-mini"><thead><tr><th scope="col">Giorno</th><th scope="col">Orario</th><th scope="col">Impegno</th><th scope="col">Ore</th><th scope="col">Scuola · conta in</th></tr></thead><tbody>` +
       d.esterni.map(x => `<tr class="q40-esterno${sovrapposti.has(x.data + '|' + x.impegno) ? ' q40-sovrapposto' : ''}"><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${esc(x.impegno)}</td><td class="num">${ore(x.ore)}</td><td>${esc(x.scuola)} · ${esc(CONTA[x.conta] || x.conta)}</td></tr>`).join('') +
       '</tbody></table>';
@@ -184,6 +185,41 @@ const Scheda40 = (() => {
     if (foglio.scuole && foglio.scuole.length) return foglio.scuole.slice();
     return [...new Set(risultato.docenti.filter(d => d.scuola).map(d => d.scuola.trim()))].sort((a, b) => a.localeCompare(b, 'it'));
   }
+  /*
+    VERIFICA DI COMPATIBILITÀ (calcolo in QuarantaOre.calcola, campo «conflitti» di ogni docente): per ogni scuola, dopo aver caricato
+    il loro piano, l'elenco dei giorni in cui un docente in comune ha impegni che si sovrappongono, che lasciano meno di «margine» minuti
+    per spostarsi o che non hanno l'orario. Il margine si ricorda sul dispositivo.
+  */
+  const CHIAVE_MARGINE = 'orariofacile.q40margine';
+  let margine = 30;
+  try { const m = localStorage.getItem(CHIAVE_MARGINE); if (m !== null && !isNaN(Number(m))) margine = Number(m); } catch (e) { /* resta 30 */ }
+  const problema = c => c.tipo === 'sovrapposizione' ? `sovrapposizione di ${c.minuti} min` : c.tipo === 'vicini' ? `solo ${c.minuti} min per spostarsi` : 'orario mancante, da verificare';
+  const ORDINE_PROBLEMI = { sovrapposizione: 0, vicini: 1, senzaOrario: 2 };
+  // le incompatibilità dei docenti in comune con una scuola: [{ d, c }] in ordine di gravità e di data
+  const incompatibilita = s => [].concat(...docentiDi(s).map(d => (d.conflitti || []).filter(c => stessaScuola(c.scuola, s)).map(c => ({ d, c }))))
+    .sort((x, y) => ORDINE_PROBLEMI[x.c.tipo] - ORDINE_PROBLEMI[y.c.tipo] || x.c.data.localeCompare(y.c.data));
+  function verificaHtml(s) {
+    const elenco = incompatibilita(s);
+    if (!elenco.length) return `<p class="q40-ok">✓ Il piano di ${esc(s)} è compatibile con il nostro: nessuna sovrapposizione e almeno ${margine} minuti per spostarsi.</p>`;
+    const conta = t => elenco.filter(x => x.c.tipo === t).length;
+    const righe = elenco.map(({ d, c }) => `<tr class="q40-inc-${c.tipo}"><th scope="row">${esc(nome(d))}</th><td>${esc(dataIt(c.data))}</td>
+      <td>${esc(c.nostro)} <span class="q40-codice">${esc(c.nostroOrario || 'senza orario')}</span></td>
+      <td>${esc(c.loro)} <span class="q40-codice">${esc(c.loroOrario || 'senza orario')}</span></td><td>${esc(problema(c))}</td></tr>`).join('');
+    return `<details class="q40-verifica" open><summary>⚠ Verifica con ${esc(s)}: ${[conta('sovrapposizione') ? conta('sovrapposizione') + ' sovrapposizioni' : '',
+        conta('vicini') ? conta('vicini') + ' con poco tempo per spostarsi' : '', conta('senzaOrario') ? conta('senzaOrario') + ' senza orario' : ''].filter(Boolean).join(', ')}</summary>
+      <div class="q40-tabella-box"><table class="q40-mini"><thead><tr><th scope="col">Docente</th><th scope="col">Giorno</th><th scope="col">Da noi</th>
+        <th scope="col">Presso ${esc(s)}</th><th scope="col">Problema</th></tr></thead><tbody>${righe}</tbody></table></div>
+      <button class="btn" data-q40="excelVerifica" data-scuola="${esc(s)}">📥 Scarica le incompatibilità (Excel, da mandare alla scuola)</button></details>`;
+  }
+  function excelVerifica(s) {
+    const I = t => ({ v: t, stile: 'intest' });
+    const righe = [[{ v: `Verifica di compatibilità dei piani delle attività – IC di Almese e ${s} – ${foglio.anno || ''}`, stile: 'titolo' }],
+      [`Estratto del ${new Date().toLocaleDateString('it-IT')}. Tempo minimo per spostarsi tra le due scuole: ${margine} minuti.`], [],
+      ['Docente', 'Giorno', 'Impegno IC Almese', 'Orario IC Almese', `Impegno ${s}`, `Orario ${s}`, 'Problema'].map(I)]
+      .concat(incompatibilita(s).map(({ d, c }) => [nome(d), dataIt(c.data), c.nostro, c.nostroOrario, c.loro, c.loroOrario,
+        { v: problema(c), stile: c.tipo === 'senzaOrario' ? '' : 'evid' }]));
+    scarica(Xlsx.crea([{ nome: 'Incompatibilità', larghezze: [26, 18, 36, 14, 36, 14, 28], blocca: 4, righe }]), `Incompatibilità con ${s.replace(/[\\\/:*?"<>|]/g, '')}.xlsx`);
+  }
   function scuole() {
     const elenco = elencoScuole();
     const righe = elenco.map((s, i) => {
@@ -194,15 +230,18 @@ const Scheda40 = (() => {
         <label class="btn${s && comuni.length ? '' : ' disabilitato'}">📤 Carica il loro file<input type="file" accept=".xlsx,.ods,.csv" data-q40esterni="${esc(s)}" hidden${s && comuni.length ? '' : ' disabled'}></label>
         <span class="hint">${!s ? 'scrivi il nome della scuola'
           : comuni.length ? `docenti in comune: ${esc(comuni.map(nome).join(', '))}${esterni.length ? ` · caricati ${esterni.length} loro impegni` : ''}`
-          : `nessun docente: scrivi «${esc(s)}» nella colonna «Scuola di completamento» della scheda «Docenti» del Foglio`}</span></li>`;
+          : `nessun docente: scrivi «${esc(s)}» nella colonna «Scuola di completamento» della scheda «Docenti» del Foglio`}</span>
+        ${s && comuni.length ? (esterni.length ? verificaHtml(s) : `<p class="hint">Verifica di compatibilità: si fa da sola quando carichi il loro file.</p>`) : ''}</li>`;
     }).join('');
     // docenti in COE con una scuola che non è nell'elenco
     const fuori = risultato.docenti.filter(d => d.scuola && !elenco.some(s => stessaScuola(d.scuola, s)));
     return sezione('scuole', 'Scuole di completamento', `(${elenco.filter(Boolean).length})`,
       `<p class="hint">Per ogni scuola: «Piano per la scuola» crea l'Excel con i SOLI docenti in comune (riepilogo, piano con le righe evidenziate,
         una pagina per docente) da mandare alla segreteria o al Dirigente; «Carica il loro file» legge il piano che ci mandano loro e completa
-        il piano individuale dei docenti in COE (si vede nel dettaglio del docente e nell'app; le sovrapposizioni di orario finiscono negli avvisi).</p>
+        il piano individuale dei docenti in COE (si vede nel dettaglio del docente e nell'app) e lo confronta con il nostro: sotto ogni scuola
+        la verifica di compatibilità segnala gli impegni che si sovrappongono, quelli troppo vicini per spostarsi e quelli senza orario.</p>
       <label class="q40-num-scuole">Numero di scuole <input type="number" min="0" max="20" data-q40="numeroScuole" value="${elenco.length}" class="q40-num" style="width:64px"></label>
+      <label class="q40-num-scuole">Minuti per spostarsi da una scuola all'altra <input type="number" min="0" max="180" step="5" data-q40="margine" value="${margine}" class="q40-num" style="width:64px"></label>
       <ul class="q40-scuole-elenco">${righe}</ul>
       ${fuori.length ? `<p class="q40-errore">Docenti con una scuola che non è nell'elenco: ${esc(fuori.map(d => nome(d) + ' (' + d.scuola + ')').join(', '))}.</p>` : ''}`);
   }
@@ -221,14 +260,22 @@ const Scheda40 = (() => {
     try { es = QuarantaOre.leggiImpegniEsterni(await Foglio.leggiTabelle(file), risultato, scuola); }
     catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); return; }
     const chi = [...es.docenti].map(nomeDi).join(', ');
+    // verifica di compatibilità PRIMA di salvare: il conto rifatto con i loro impegni al posto di quelli caricati prima
+    const prova = QuarantaOre.calcola(Object.assign({}, foglio, {
+      esterni: (foglio.esterni || []).filter(x => !stessaScuola(x.scuola, scuola)).concat(es.voci.map(v => Object.assign({ scuola }, v))) }), classiCorrenti);
+    const inc = [].concat(...prova.docenti.map(d => (d.conflitti || []).filter(c => stessaScuola(c.scuola, scuola))));
+    const n = t => inc.filter(c => c.tipo === t).length;
     const domanda = `Dal file di ${scuola}: ${es.righe} impegni per ${es.docenti.size} docenti (${chi}).` +
       (es.nonTrovati.size ? ` Non riconosciuti (ignorati): ${[...es.nonTrovati].slice(0, 10).join(', ')}.` : '') +
+      (inc.length ? ` ⚠ Verifica con il nostro piano: ${n('sovrapposizione')} sovrapposizioni, ${n('vicini')} con meno di ${margine} minuti per spostarsi, ${n('senzaOrario')} senza orario (dopo il salvataggio le vedi sotto la scuola).`
+        : ' ✓ Verifica con il nostro piano: nessuna incompatibilità.') +
       ` Salvarli nella scheda «Impegni altre scuole» del Foglio? Quelli caricati prima da ${scuola} si sostituiscono.`;
     const esegui = async () => {
       stato = 'Salvo gli impegni nel Foglio…'; disegna();
       try {
         await QuarantaOre.scriviImpegniEsterni(foglio, risultato, scuola, es.voci, opz.email());
         ricalcola();
+        sezioniAperte.add('scuole');   // così si vede subito la verifica di compatibilità
         await pubblica(`Impegni di ${scuola} salvati: ${es.righe}.`);
       } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
     };
@@ -699,6 +746,7 @@ const Scheda40 = (() => {
         else if (az === 'pubblica') pubblica('');
         else if (az === 'stampa') window.print();
         else if (az === 'estratto') estratto(b.dataset.scuola);
+        else if (az === 'excelVerifica') excelVerifica(b.dataset.scuola);
         else if (az === 'excel') scaricaExcel(b.dataset.codice);
         else if (az === 'togli') togli(b.dataset.codice, b.dataset.chiave);
         else if (az === 'excelEsoneri') excelEsoneri();
@@ -752,6 +800,11 @@ const Scheda40 = (() => {
         if (e.target.dataset.q40p) { cambioPiano(e.target); return; }
         // scuole di completamento: numero, nomi, file che arriva da una scuola
         if (e.target.dataset.q40s !== undefined) { const l = elencoScuole(); l[Number(e.target.dataset.q40s)] = e.target.value.trim(); salvaScuole(l); return; }
+        if (e.target.dataset.q40 === 'margine') {   // il tempo per spostarsi: si ricorda sul dispositivo e la verifica si rifà
+          margine = Math.max(0, Math.min(180, Number(e.target.value) || 0));
+          try { localStorage.setItem(CHIAVE_MARGINE, String(margine)); } catch (err) { /* vale solo ora */ }
+          foglio.margine = margine; ricalcola(); disegna(); return;
+        }
         if (e.target.dataset.q40 === 'numeroScuole') { const n = Math.max(0, Math.min(20, parseInt(e.target.value, 10) || 0)), l = elencoScuole(); while (l.length < n) l.push(''); salvaScuole(l.slice(0, n)); return; }
         if (e.target.dataset.q40esterni !== undefined) { const fl = e.target.files[0], s = e.target.dataset.q40esterni; e.target.value = ''; if (fl) caricaEsterni(fl, s); return; }
         const b = e.target.closest('input[data-q40]');

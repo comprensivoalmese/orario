@@ -243,7 +243,10 @@ Le parti del progetto:
   scuola» (l'estratto) e «Carica il loro file»: `leggiImpegniEsterni` legge il piano che ci mandano (un foglio per docente come il nostro
   estratto, oppure un elenco con la colonna Docente; Giorno/Data, Orario o Inizio/Fine, Impegno, Ore, Conta in) e `scriviImpegniEsterni`
   lo salva nella scheda «Impegni altre scuole» (Scuola, Codice, Docente, Data, Orario, Impegno, Ore, Conta in; per quella scuola sostituisce).
-  Nel conto: `esterni`, `oreEsterne`, `conflitti` (sovrapposizioni di orario con i nostri impegni → avvisi); NON contano nelle nostre 40+40
+  Nel conto: `esterni`, `oreEsterne`, `conflitti` = **verifica di compatibilità** (dal 09/10/2026; `tipo`: «sovrapposizione», «vicini» =
+  meno di `foglio.margine` minuti per spostarsi, default 30, campo «Minuti per spostarsi» della sezione ricordato in `orariofacile.q40margine`,
+  «senzaOrario»; esclusi esonerati e assenti; i primi due → avvisi). Sotto ogni scuola `verificaHtml` (tabella colorata + Excel `excelVerifica`
+  da mandare alla scuola); `caricaEsterni` fa la verifica già prima di salvare e la scrive nel messaggio di conferma. NON contano nelle nostre 40+40
   ma completano il piano del docente: dettaglio nella scheda, campo `esterni` nel file pubblicato, tabella nell'app e blocco nel suo Excel.
   `leggiFoglio` chiede prima i titoli delle schede e legge solo quelle facoltative che esistono (Esoneri, Presenze, Impegni altre scuole).
   creata se manca) e si sommano alla formazione degli impegni. `app/js/xlsx.js` (spostato da orario-facile/) sa scrivere formule,

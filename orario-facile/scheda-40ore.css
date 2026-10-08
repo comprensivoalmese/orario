@@ -99,7 +99,15 @@
 .q40-scuola { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
 .q40-scuola-nome input { width: 220px; max-width: 100%; }
 .q40-scuola .btn.disabilitato { opacity: .5; pointer-events: none; }
-.q40-num-scuole { display: inline-flex; align-items: center; gap: 6px; margin: 4px 0; }
+.q40-num-scuole { display: inline-flex; align-items: center; gap: 6px; margin: 4px 16px 4px 0; }
+/* verifica di compatibilità con il piano di una scuola: occupa tutta la riga sotto i tasti */
+.q40-scuola > .q40-verifica, .q40-scuola > .q40-ok, .q40-scuola > p.hint { flex-basis: 100%; margin: 4px 0 0; }
+.q40-ok { color: var(--ok, #2e7d32); }
+.q40-verifica > summary { cursor: pointer; color: var(--bad, #b3261e); font-weight: 600; }
+.q40-verifica .btn { margin-top: 6px; }
+.q40-inc-sovrapposizione td { background: color-mix(in srgb, var(--bad, #b3261e) 14%, transparent); }
+.q40-inc-vicini td { background: color-mix(in srgb, var(--warn, #b26a00) 14%, transparent); }
+.q40-inc-senzaOrario td { color: var(--text-3, #666); }
 /* impegni presso le altre scuole nel dettaglio di un docente in COE */
 .q40-sottotitolo { margin: 12px 0 4px; font-size: 1rem; }
 .q40-esterno td { font-style: italic; }

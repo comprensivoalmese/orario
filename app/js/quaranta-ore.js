@@ -367,12 +367,22 @@ const QuarantaOre = (() => {
       const esterni = (foglio.esterni || []).filter(x => x.codice === d.codice).sort((a, b) => (a.data + a.orario).localeCompare(b.data + b.orario));
       const oreEsterne = { prime: arrotonda(esterni.filter(x => x.conta === 'prime').reduce((s, x) => s + x.ore, 0)),
         seconde: arrotonda(esterni.filter(x => x.conta === 'seconde').reduce((s, x) => s + x.ore, 0)) };
-      const conflitti = [];
+      /*
+        VERIFICA DI COMPATIBILITÀ con il piano dell'altra scuola, per ogni giorno in cui il docente ha impegni da tutte e due:
+        - «sovrapposizione»: gli orari si accavallano (non può essere in due posti);
+        - «vicini»: tra la fine di uno e l'inizio dell'altro ci sono meno minuti di foglio.margine (default 30) per spostarsi;
+        - «senzaOrario»: uno dei due non ha l'orario, quindi non si può controllare (da chiedere).
+        Gli impegni da cui il docente è già esonerato o a cui era assente non contano.
+      */
+      const conflitti = [], margine = foglio.margine == null ? 30 : foglio.margine;
       esterni.forEach(x => {
-        const [a, b] = intervallo(x.orario); if (a == null) return;
-        dettaglio.filter(y => y.data === x.data && !y.esonero && !y.assente).forEach(y => {
+        const [a, b] = intervallo(x.orario);
+        dettaglio.filter(y => y.data === x.data && !y.esonero && !y.assente && y.conta !== 'altro').forEach(y => {
           const [c, e] = intervallo(y.orario);
-          if (c != null && a < e && c < b) conflitti.push({ data: x.data, nostro: y.impegno, nostroOrario: y.orario, loro: x.impegno, loroOrario: x.orario, scuola: x.scuola });
+          const voce = { data: x.data, nostro: y.impegno, nostroOrario: y.orario, loro: x.impegno, loroOrario: x.orario, scuola: x.scuola };
+          if (a == null || c == null) conflitti.push(Object.assign(voce, { tipo: 'senzaOrario' }));
+          else if (a < e && c < b) conflitti.push(Object.assign(voce, { tipo: 'sovrapposizione', minuti: Math.min(b, e) - Math.max(a, c) }));
+          else { const pausa = a >= e ? a - e : c - b; if (pausa < margine) conflitti.push(Object.assign(voce, { tipo: 'vicini', minuti: pausa })); }
         });
       });
       // formazione: quella scritta negli impegni + le ore attribuite al docente nella scheda «Docenti»
@@ -386,8 +396,8 @@ const QuarantaOre = (() => {
       });
     }).sort((a, b) => (a.nome || a.codice).localeCompare(b.nome || b.codice, 'it'));
     // le sovrapposizioni con gli impegni delle altre scuole
-    docenti.forEach(d => d.conflitti.forEach(c => avvisi.push(`${d.nome || d.codice}: il ${c.data.split('-').reverse().join('/')} «${c.nostro}» (${c.nostroOrario}) ` +
-      `si sovrappone a «${c.loro}» presso ${c.scuola || 'l\'altra scuola'} (${c.loroOrario}).`)));
+    docenti.forEach(d => d.conflitti.filter(c => c.tipo !== 'senzaOrario').forEach(c => avvisi.push(`${d.nome || d.codice}: il ${c.data.split('-').reverse().join('/')} «${c.nostro}» (${c.nostroOrario}) ` +
+      (c.tipo === 'sovrapposizione' ? 'si sovrappone a' : `lascia solo ${c.minuti} minuti per spostarsi verso`) + ` «${c.loro}» presso ${c.scuola || 'l\'altra scuola'} (${c.loroOrario}).`)));
     const daApprovare = docenti.filter(d => d.dettaglio.some(x => x.proposto));
     if (daApprovare.length) avvisi.unshift(`Proposte di esonero da approvare: ${daApprovare.map(d => (d.nome || d.codice) + ' (' + d.dettaglio.filter(x => x.proposto).length + ')').join(', ')}. Apri il dettaglio del docente per approvarle.`);
     // gli incontri con le presenze registrate (scheda «Presenze»)
