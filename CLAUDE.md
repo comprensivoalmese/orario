@@ -70,9 +70,10 @@ Le parti del progetto:
   «Carica la graduatoria interna» (.xlsx/.ods/.csv; `Alternativa.leggiGraduatoria`/`abbinaPunteggi`) trova da sola intestazioni, nome e colonna del
   punteggio (si può cambiare colonna) e scrive i punteggi ai docenti riconosciuti dal nome; il file non si conserva. Le schede dei gruppi
   (Alternativa, Potenziamento L2…) si contraggono toccando il titolo (`gruppiChiusi`).
-  Regole della graduatoria (scelte della scuola, 07/10/2026): senza punti = in cima alla graduatoria per la L. 104 (colonna «Precedenza L. 104»
-  = SI; il punteggio diventa «L.104» e passa avanti a tutti, con «più alto» come con «più basso»); 0 punti = anno di prova (resta 0); chi
-  non è nell'elenco (tempo determinato o altra scuola) vale 0.
+  Regole della graduatoria (scelte della scuola, 07-08/10/2026): senza punti nel file (in cima alla graduatoria per la L. 104, colonna
+  «Precedenza L. 104» = SI) il punteggio resta VUOTO e va scritto a mano quando si ha quello reale: per l'Alternativa la 104 NON dà
+  precedenza e il motivo non si mostra (intanto vale 0, un vecchio «L.104» salvato nel Foglio torna vuoto); 0 punti = anno di prova
+  (resta 0); chi non è nell'elenco (tempo determinato o altra scuola) vale 0.
   **Modifiche a mano della bozza** (`alt.vincoli`, `altModifica`): per ogni ora un menu per scegliere un altro docente (resta fisso 🔒 e il resto si
   ricalcola), ✕ toglie il docente da quell'ora, ⛔ lo toglie da tutta la bozza, ↺ annulla una modifica, «Azzera le modifiche» riparte da capo.
   Per ogni docente si scrivono (nel riquadro o nel Foglio) esclusioni, classi dell'anno scorso e punteggio. «Applica la bozza» scrive le

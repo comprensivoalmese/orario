@@ -519,7 +519,7 @@ const SchedaCompresenze = (() => {
         const giorni = {}; GIORNI_ALT.forEach((g, i) => { giorni[g] = Alternativa.testoOre(Alternativa.oreDa(r[2 + i])); });
         return { codice: String(r[0] || '').trim().toUpperCase(), nome: String(r[1] || '').trim(), giorni,
           nessuna: /^(si|sì|x|1|true|vero)$/i.test(String(r[7] || '').trim()), escl: String(r[8] || '').trim(),
-          classiPrima: String(r[9] || '').trim(), punteggio: String(r[10] || '').trim() };
+          classiPrima: String(r[9] || '').trim(), punteggio: /^\s*l\.?\s*104/i.test(String(r[10] || '')) ? '' : String(r[10] || '').trim() };   // un vecchio «L.104» torna vuoto
       });
     } catch (e) { /* scheda assente: si parte dal file delle disponibilità */ }
   }
@@ -696,12 +696,15 @@ const SchedaCompresenze = (() => {
     const lettura = Alternativa.leggiGraduatoria(alt.grad.tabelle, colonna);
     alt.grad.lettura = lettura;
     const ab = Alternativa.abbinaPunteggi(alt.dispo, lettura.righe, x => { const v = x.codice && nomi && nomi.get(x.codice); return v ? [(v.cognome || '') + ' ' + (v.nome || '')] : []; });
-    ab.abbinati.forEach(a => { alt.dispo[a.i].punteggio = typeof a.punteggio === 'number' ? String(a.punteggio).replace('.', ',') : a.punteggio; });
+    // chi nella graduatoria non ha punti (es. in cima per la L. 104, che per l'Alternativa non dà precedenza) resta vuoto: si scrive a mano
+    const daCompletare = ab.abbinati.filter(a => a.senzaPunti).map(a => alt.dispo[a.i].nome);
+    ab.abbinati.forEach(a => { alt.dispo[a.i].punteggio = typeof a.punteggio === 'number' ? String(a.punteggio).replace('.', ',') : ''; });
     // chi non è nell'elenco (tempo determinato o di un'altra scuola) non ha graduatoria interna: vale 0 punti
     ab.senza.forEach(i => { alt.dispo[i].punteggio = '0'; });
     alt.bozza = null; modificato = true;
     const col = lettura.colonne.find(c => c.indice === lettura.usata);
-    messaggio = `Graduatoria letta (colonna «${col.titolo}»): ${ab.abbinati.length} punteggi assegnati su ${alt.dispo.length} docenti` +
+    messaggio = `Graduatoria letta (colonna «${col.titolo}»): ${ab.abbinati.length - daCompletare.length} punteggi assegnati su ${alt.dispo.length} docenti` +
+      (daCompletare.length ? `. Nella graduatoria senza punti (scrivi il punteggio a mano, intanto vale 0): ${daCompletare.join(', ')}` : '') +
       (ab.senza.length ? `. Non sono nell'elenco e valgono 0 punti (tempo determinato o altra scuola): ${ab.senza.map(i => alt.dispo[i].nome).join(', ')}` : '') + '. Premi «Salva sul Foglio» per tenerli.';
   }
   async function altGraduatoria(file) {
@@ -768,7 +771,6 @@ const SchedaCompresenze = (() => {
         const c = daSlot.get(s.id), fisso = Object.prototype.hasOwnProperty.call(v.fissi, s.id), d = c && b.docenti.find(x => x.codice === c);
         const note = [];
         if (d && Alternativa.classiDiOggi(alt.dispo.find(x => x.codice === c).classiPrima, alt.salgono).includes(semplice(s.classe))) note.push('riprende la classe');
-        if (d && /^\s*l\.?\s*104/i.test(String(d.punteggio))) note.push('precedenza L. 104');
         if (d && Alternativa.numero(d.escl) > 0) note.push(`escluso ${Alternativa.numero(d.escl)} ${Alternativa.numero(d.escl) === 1 ? 'volta' : 'volte'}`);
         // i docenti che possono stare in quest'ora: si può sceglierne un altro (la scelta resta ferma e il resto si ricalcola)
         const candidati = b.docenti.filter(x => x.ok.includes(s.id)).sort((p, q) => nomeAlt(p.codice).localeCompare(nomeAlt(q.codice), 'it'));
