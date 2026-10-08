@@ -231,7 +231,11 @@ Le parti del progetto:
   titolo della colonna); incontri riconosciuti da data + nome/tipo, docenti da codice o nome; per gli incontri del file `scriviPresenze`
   sostituisce le righe di prima. «📄 Modello presenze» (`modelloPresenze`) = Excel con gli incontri fino a oggi e i docenti attesi
   (Presente già a SI). Nel piano di esoneri la spunta «Fotografia a oggi» (`soloFuturi`, data `oggi` non ricordata) esonera solo dagli
-  incontri successivi; gli altri contano come sono andati. Le ore di formazione obbligatoria di ogni docente si scrivono nel prospetto (colonna «Ore formazione» della scheda Docenti,
+  incontri successivi; gli altri contano come sono andati.
+  **Presenze «altra scuola»** (dal 09/10/2026, tasto «📥 Carica presenze (altra scuola)» nel riquadro del piano, `caricaAltraScuola`):
+  il file dice per data e nome chi non è venuto da noi perché era nell'altra scuola (COE); `leggiPresenzeDaTabelle(…, true)`: un elenco
+  senza colonna Presente vale tutto «fuori» (gli altri non cambiano), con la colonna o nella griglia contano NO/A/E/«altra scuola».
+  Diventano esoneri APPROVATI nella scheda «Esoneri» (quelli di prima restano): le ore si tolgono dal conteggio e restano dovute; il piano si rifà. Le ore di formazione obbligatoria di ogni docente si scrivono nel prospetto (colonna «Ore formazione» della scheda Docenti,
   **Pagina 40+40** (dal 08/10/2026): le sezioni Prospetto, Piano di esoneri, Esoneri per impegno e Scuole di completamento sono uguali
   (`sezione()`, `.q40-sezione`), si aprono e chiudono dal titolo e all'apertura sono CHIUSE (`sezioniAperte`, solo in memoria).
   **Scuole di completamento**: numero e nomi delle scuole modificabili, salvati nel Foglio («Impostazioni», voce «Scuole di completamento»,

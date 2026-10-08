@@ -299,7 +299,11 @@ const Scheda40 = (() => {
         ${protettiHtml()}
       </div>
       <div class="q40-barra"><button class="btn pubblica" data-q40="pianoSimula">▶ Simula il piano</button>
-        ${piano ? '<button class="btn" data-q40="pianoScarta">Scarta il piano</button>' : ''}</div>`;
+        ${piano ? '<button class="btn" data-q40="pianoScarta">Scarta il piano</button>' : ''}
+        <button class="btn" data-q40="altraScuola" title="Chi nelle date del file era nell'altra scuola: esonerato da quegli incontri, le ore restano dovute">📥 Carica presenze (altra scuola)</button>
+        <input type="file" id="q40AltraScuola" accept=".xlsx,.ods,.csv" hidden></div>
+      <p class="hint">«Carica presenze (altra scuola)»: il file con le date e i nomi di chi in quegli incontri era nell'altra scuola (docenti in COE).
+        Diventano esoneri già approvati da quegli incontri: le ore si tolgono dal conteggio e restano da fare.</p>`;
     if (piano) h += pianoRisultato();
     return sezione('piano', '🧮 Piano di esoneri (simulazione)', piano ? '(simulazione pronta)' : '', h);
   }
@@ -585,6 +589,55 @@ const Scheda40 = (() => {
     };
     if (typeof chiedi === 'function') chiedi(domanda, esegui, 'Salva le presenze'); else if (confirm(domanda)) esegui();
   }
+  /*
+    PRESENZE «ALTRA SCUOLA» (dal riquadro del piano di esoneri): il file dice, per data e nome, chi non è venuto da noi perché era
+    nell'altra scuola. Per quegli incontri il docente diventa ESONERATO (approvato) nella scheda «Esoneri»: le ore si tolgono dal
+    conteggio e quindi restano dovute. Gli esoneri che il docente aveva già restano; poi il piano si rifà.
+  */
+  async function caricaAltraScuola(file) {
+    let es;
+    try { es = QuarantaOre.leggiPresenzeDaTabelle(await Foglio.leggiTabelle(file), risultato, true); }
+    catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); return; }
+    // per docente gli incontri da cui risulta fuori (valore «non presente»)
+    const nuovi = new Map();
+    es.voci.forEach((m, k) => m.forEach((presente, c) => { if (presente) return; if (!nuovi.has(c)) nuovi.set(c, new Set()); nuovi.get(c).add(k); }));
+    if (!nuovi.size) {
+      stato = `⚠️ Nel file non ho trovato nessuno da segnare come esonerato.${es.nonTrovati.size ? ' Docenti non riconosciuti: ' + [...es.nonTrovati].slice(0, 10).join(', ') + '.' : ''}` +
+        (es.giorniSenza.size ? ' Date senza incontri nel piano: ' + [...es.giorniSenza].slice(0, 10).map(d => d.split('-').reverse().join('/')).join(', ') + '.' : '');
+      disegna(); return;
+    }
+    let quanti = 0, oreTot = 0;
+    const elenco = [...nuovi.entries()].map(([codice, chiavi]) => {
+      const dd = risultato.docenti.find(x => x.codice === codice) || { dettaglio: [] };
+      const oreDi = k => { const x = dd.dettaglio.find(y => y.data + '|' + y.impegno === k); return x ? x.ore : 0; };
+      // le righe che aveva già (restano come sono) più le nuove, già approvate
+      const voci = [...((foglio.esoneri || new Map()).get(codice) || new Map()).keys()].map(k => { const i = k.indexOf('|'); return { data: k.slice(0, i), impegno: k.slice(i + 1), ore: oreDi(k) }; });
+      chiavi.forEach(k => {
+        const gia = voci.find(v => v.data + '|' + v.impegno === k);
+        quanti++; oreTot += oreDi(k);
+        if (gia) gia.approvato = true;
+        else { const i = k.indexOf('|'); voci.push({ data: k.slice(0, i), impegno: k.slice(i + 1), ore: oreDi(k), approvato: true }); }
+      });
+      return { codice, nome: nomeDi(codice), voci };
+    });
+    const domanda = `Dal file (${es.forma}): ${quanti} incontri da segnare come «esonerato» per ${elenco.length} docenti ` +
+      `(${elenco.map(x => x.nome || x.codice).join(', ')}), ${ore(oreTot)} ore che si tolgono dal conteggio e restano dovute.` +
+      (es.nonTrovati.size ? ` Non riconosciuti (ignorati): ${[...es.nonTrovati].slice(0, 12).join(', ')}${es.nonTrovati.size > 12 ? '…' : ''}.` : '') +
+      (es.giorniSenza.size ? ` Date senza incontri nel piano: ${[...es.giorniSenza].slice(0, 8).map(d => d.split('-').reverse().join('/')).join(', ')}.` : '') +
+      (es.nonAttesi ? ` ${es.nonAttesi} righe riguardano incontri a cui il docente non era atteso (ignorate).` : '') +
+      ' Salvarli come esoneri APPROVATI nella scheda «Esoneri» del Foglio?';
+    const esegui = async () => {
+      stato = 'Salvo gli esoneri nel Foglio…'; disegna();
+      try {
+        await QuarantaOre.scriviEsoneriTutti(foglio, elenco, opz.email());
+        const rifai = !!piano;
+        ricalcola();
+        if (rifai) simulaPiano(); else piano = null;
+        await pubblica(`Esonerati perché nell'altra scuola: ${quanti} incontri per ${elenco.length} docenti.`);
+      } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
+    };
+    if (typeof chiedi === 'function') chiedi(domanda, esegui, 'Salva gli esoneri'); else if (confirm(domanda)) esegui();
+  }
   // il modello da compilare: gli incontri fino a oggi con i docenti attesi (Presente già a SI)
   function scaricaModelloPresenze() {
     const fino = oggiIso();
@@ -657,6 +710,7 @@ const Scheda40 = (() => {
         else if (az === 'importa') box.querySelector('#q40File').click();
         else if (az === 'presenze') box.querySelector('#q40Presenze').click();
         else if (az === 'modelloPresenze') scaricaModelloPresenze();
+        else if (az === 'altraScuola') box.querySelector('#q40AltraScuola').click();
         // piano di esoneri
         else if (az === 'pianoSimula') { simulaPiano(); disegna(); }
         else if (az === 'pianoScarta') { piano = null; pianoTolte = []; disegna(); }
@@ -694,6 +748,7 @@ const Scheda40 = (() => {
       box.addEventListener('change', e => {
         if (e.target.id === 'q40File') { const f = [...e.target.files]; e.target.value = ''; if (f.length) importaEsoneri(f); return; }
         if (e.target.id === 'q40Presenze') { const f = e.target.files[0]; e.target.value = ''; if (f) caricaPresenze(f); return; }
+        if (e.target.id === 'q40AltraScuola') { const f = e.target.files[0]; e.target.value = ''; if (f) caricaAltraScuola(f); return; }
         if (e.target.dataset.q40p) { cambioPiano(e.target); return; }
         // scuole di completamento: numero, nomi, file che arriva da una scuola
         if (e.target.dataset.q40s !== undefined) { const l = elencoScuole(); l[Number(e.target.dataset.q40s)] = e.target.value.trim(); salvaScuole(l); return; }

@@ -544,11 +544,16 @@ const QuarantaOre = (() => {
     const t = semplice(v);
     let p = null;
     if (/^(si|s|x|p|pres|presente|1|true|vero|ok|firma|firmato|✓|✔)\b/.test(t) || t === 'x') p = true;
-    else if (/^(no|n|a|ag|ai|ass|assente|giust|ingiust|0|false|falso)\b/.test(t)) p = false;
+    else if (/^(no|n|a|ag|ai|ass|assente|giust|ingiust|0|false|falso|e|es|eso|esonerat\w*|altra|altrove|coe)\b/.test(t)) p = false;
     if (p === null) return null;
     return assenti ? !p : p;
   }
-  function leggiPresenzeDaTabelle(tabelle, risultato) {
+  /*
+    altrove = true: il file elenca chi NON era da noi perché era nell'altra scuola (docenti in COE). Allora un elenco senza la
+    colonna Presente vale tutto come «non presente» e a chi non è nel file non succede niente; con la colonna Presente (o nella
+    griglia) contano solo le righe con NO / A / E / «altra scuola». Il chiamante ne fa degli esoneri (piano di esoneri).
+  */
+  function leggiPresenzeDaTabelle(tabelle, risultato, altrove) {
     const elenco = risultato.docenti.map(d => ({ codice: d.codice, nome: d.nome || '' }));
     // chi è atteso a ogni incontro (dal dettaglio di ogni docente)
     const attesi = new Map();
@@ -572,7 +577,10 @@ const QuarantaOre = (() => {
       const d = trovaDocente(testoDocente, elenco);
       if (!d) { if (String(testoDocente || '').trim()) esito.nonTrovati.add(String(testoDocente).trim()); return; }
       esito.righe++;
-      incontri(dd, testoImpegno).forEach(p => { if (attesi.get(p.chiave).has(d.codice)) segna(d.codice, p.chiave, presente); else esito.nonAttesi++; });
+      // «non atteso» si conta solo se il docente non era atteso a NESSUNO degli incontri della riga (es. due CdC lo stesso giorno)
+      const delGiorno = incontri(dd, testoImpegno), suoi = delGiorno.filter(p => attesi.get(p.chiave).has(d.codice));
+      if (!delGiorno.length) return;
+      if (suoi.length) suoi.forEach(p => segna(d.codice, p.chiave, presente)); else esito.nonAttesi++;
     };
     for (const tab of tabelle || []) {
       const righe = tab.righe || [];
@@ -589,9 +597,10 @@ const QuarantaOre = (() => {
           const cImp = h.findIndex(c => /impegno|riunione|incontro|organo|oggetto|^tipo/.test(c));
           const cPres = h.findIndex((c, j) => j !== cDoc && /present|presenz|assen|esito|stato|firma/.test(c));
           const assenti = cPres >= 0 ? /assen/.test(h[cPres]) : cDoc >= 0 && /assent/.test(h[cDoc]);
-          esito.forma = cPres >= 0 ? 'una riga per docente e incontro' : assenti ? 'elenco degli assenti' : 'elenco dei presenti';
+          esito.forma = cPres >= 0 ? 'una riga per docente e incontro' : altrove ? 'elenco di chi era nell\'altra scuola' : assenti ? 'elenco degli assenti' : 'elenco dei presenti';
           const corpo = righe.slice(i + 1);
           if (cPres >= 0) corpo.forEach(r => metti(nomeDi(r), data(r[cData]), cImp >= 0 ? r[cImp] : '', presenza(r[cPres], assenti)));
+          else if (altrove) corpo.forEach(r => metti(nomeDi(r), data(r[cData]), cImp >= 0 ? r[cImp] : '', false));
           else {
             // solo un elenco (dei presenti o degli assenti): per gli incontri citati, chi era atteso e non c'è ha l'opposto
             corpo.forEach(r => metti(nomeDi(r), data(r[cData]), cImp >= 0 ? r[cImp] : '', !assenti));
