@@ -232,6 +232,16 @@ Le parti del progetto:
   sostituisce le righe di prima. «📄 Modello presenze» (`modelloPresenze`) = Excel con gli incontri fino a oggi e i docenti attesi
   (Presente già a SI). Nel piano di esoneri la spunta «Fotografia a oggi» (`soloFuturi`, data `oggi` non ricordata) esonera solo dagli
   incontri successivi; gli altri contano come sono andati. Le ore di formazione obbligatoria di ogni docente si scrivono nel prospetto (colonna «Ore formazione» della scheda Docenti,
+  **Pagina 40+40** (dal 08/10/2026): le sezioni Prospetto, Piano di esoneri, Esoneri per impegno e Scuole di completamento sono uguali
+  (`sezione()`, `.q40-sezione`), si aprono e chiudono dal titolo e all'apertura sono CHIUSE (`sezioniAperte`, solo in memoria).
+  **Scuole di completamento**: numero e nomi delle scuole modificabili, salvati nel Foglio («Impostazioni», voce «Scuole di completamento»,
+  valore «IC A; IC B», `scriviScuole`; all'inizio quelle della colonna «Scuola di completamento» dei Docenti); per ognuna «Piano per la
+  scuola» (l'estratto) e «Carica il loro file»: `leggiImpegniEsterni` legge il piano che ci mandano (un foglio per docente come il nostro
+  estratto, oppure un elenco con la colonna Docente; Giorno/Data, Orario o Inizio/Fine, Impegno, Ore, Conta in) e `scriviImpegniEsterni`
+  lo salva nella scheda «Impegni altre scuole» (Scuola, Codice, Docente, Data, Orario, Impegno, Ore, Conta in; per quella scuola sostituisce).
+  Nel conto: `esterni`, `oreEsterne`, `conflitti` (sovrapposizioni di orario con i nostri impegni → avvisi); NON contano nelle nostre 40+40
+  ma completano il piano del docente: dettaglio nella scheda, campo `esterni` nel file pubblicato, tabella nell'app e blocco nel suo Excel.
+  `leggiFoglio` chiede prima i titoli delle schede e legge solo quelle facoltative che esistono (Esoneri, Presenze, Impegni altre scuole).
   creata se manca) e si sommano alla formazione degli impegni. `app/js/xlsx.js` (spostato da orario-facile/) sa scrivere formule,
   colonne nascoste e menu a tendina; nell'app servono anche `../sostituzioni/js/docx.js` (lo ZIP) e `js/xlsx.js`.
   Le spunte «Visibile» si scrivono nel Foglio e si pubblicano subito: `quaranta-ore.json` nella `cartellaImpegni`, SOLO codici e solo

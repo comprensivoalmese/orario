@@ -19,7 +19,11 @@ const Scheda40 = (() => {
   let box = null, opz = null;
   let foglio = null, risultato = null, classiCorrenti = null, errore = '', inCorso = false, stato = '';
   const aperti = new Set();
-  let prospettoAperto = true;   // il riquadro del prospetto è aperto (si chiude toccando il titolo)
+  // le sezioni della pagina (prospetto, piano di esoneri, esoneri per impegno, scuole di completamento) sono tutte uguali: si aprono e
+  // si chiudono toccando il titolo e all'apertura della scheda sono CHIUSE; restano come le lascia l'utente quando la scheda si ridisegna
+  const sezioniAperte = new Set();
+  const sezione = (chiave, titolo, nota, corpo) => `<details class="q40-sezione" data-sezione="${chiave}"${sezioniAperte.has(chiave) ? ' open' : ''}>` +
+    `<summary><h3>${titolo}</h3>${nota ? ` <span class="hint">${nota}</span>` : ''}</summary><div class="q40-corpo">${corpo}</div></details>`;
 
   // ---------- chi può vedere la scheda ----------
   let permesso = null;   // null = non ancora saputo
@@ -103,14 +107,13 @@ const Scheda40 = (() => {
       if (aperto) r += `<tr class="q40-dettaglio"><td colspan="13">${dettaglio(d)}</td></tr>`;
       return r;
     }).join('');
-    // il prospetto si contrae toccando il titolo (resta così anche quando la scheda si ridisegna)
-    return `<details class="q40-prospetto"${prospettoAperto ? ' open' : ''}><summary><h3>Prospetto 40+40 per docente${foglio.anno ? ' – ' + esc(foglio.anno) : ''}</h3>
-        <span class="hint">(${risultato.docenti.length} docenti · tocca un nome per il dettaglio; in rosso le ore oltre il dovuto)</span></summary>
-      <div class="q40-tabella-box"><table class="q40-tabella"><caption class="visually-hidden">Prospetto 40+40 per docente</caption>
+    return sezione('prospetto', 'Prospetto 40+40 per docente' + (foglio.anno ? ' – ' + esc(foglio.anno) : ''),
+      `(${risultato.docenti.length} docenti · tocca un nome per il dettaglio; in rosso le ore oltre il dovuto)`,
+      `<div class="q40-tabella-box"><table class="q40-tabella"><caption class="visually-hidden">Prospetto 40+40 per docente</caption>
       <thead><tr><th scope="col">Docente</th><th scope="col">Tipo</th><th scope="col">Ore sett.</th><th scope="col">Dovute (per ciascuna)</th>
         <th scope="col">Prime 40</th><th scope="col">Seconde 40</th><th scope="col">Formazione obbligatoria (ore)</th><th scope="col">Esonerate</th><th scope="col">Assenze (ore, non contano)</th>
         <th scope="col">Restano prime</th><th scope="col">Restano seconde</th><th scope="col">Restano in tutto</th><th scope="col">Visibile</th></tr></thead>
-      <tbody>${righe}</tbody></table></div></details>`;
+      <tbody>${righe}</tbody></table></div>`);
   }
   function dettaglio(d) {
     if (!d.dettaglio.length) return '<p class="hint">Nessun impegno: controlla le classi del docente nell\'orario.</p>';
@@ -123,6 +126,16 @@ const Scheda40 = (() => {
         (x.esonero ? ` · esonerato <button class="btn piccolo" data-q40="approva" data-valore="" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">↺ Togli approvazione</button> <button class="btn piccolo" data-q40="togli" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✕ Togli</button>` : '') +
         (x.proposto ? ` · esonero proposto <button class="btn piccolo" data-q40="approva" data-valore="SI" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✓ Approva</button> <button class="btn piccolo" data-q40="togli" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✕ Togli</button>` : '') +
         '</td></tr>').join('') +
+      '</tbody></table>' + esterniHtml(d);
+  }
+  // docenti in COE: gli impegni presso le altre scuole (caricati dal loro file) e le sovrapposizioni di orario con i nostri
+  function esterniHtml(d) {
+    if (!(d.esterni || []).length) return d.scuola ? `<p class="hint">Impegni presso ${esc(d.scuola)}: non ancora caricati (sezione «Scuole di completamento» → «Carica il loro file»).</p>` : '';
+    const sovrapposti = new Set((d.conflitti || []).map(c => c.data + '|' + c.loro));
+    return `<h4 class="q40-sottotitolo">Impegni presso le altre scuole <span class="hint">(non contano qui: prime ${ore(d.oreEsterne.prime)} h, seconde ${ore(d.oreEsterne.seconde)} h)</span></h4>` +
+      (d.conflitti.length ? `<p class="q40-errore">⚠ ${d.conflitti.length} sovrapposizioni di orario: ${esc(d.conflitti.map(c => dataIt(c.data) + ' «' + c.nostro + '» / «' + c.loro + '»').join('; '))}</p>` : '') +
+      `<table class="q40-mini"><thead><tr><th scope="col">Giorno</th><th scope="col">Orario</th><th scope="col">Impegno</th><th scope="col">Ore</th><th scope="col">Scuola · conta in</th></tr></thead><tbody>` +
+      d.esterni.map(x => `<tr class="q40-esterno${sovrapposti.has(x.data + '|' + x.impegno) ? ' q40-sovrapposto' : ''}"><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${esc(x.impegno)}</td><td class="num">${ore(x.ore)}</td><td>${esc(x.scuola)} · ${esc(CONTA[x.conta] || x.conta)}</td></tr>`).join('') +
       '</tbody></table>';
   }
   /*
@@ -132,18 +145,18 @@ const Scheda40 = (() => {
   const nomeDi = codice => { const d = risultato.docenti.find(x => x.codice === codice); return d ? nome(d) : codice; };
   function esoneri() {
     const elenco = QuarantaOre.esoneriPerImpegno(foglio);
-    if (!elenco.length) return '';
+    if (!elenco.length) return sezione('esoneri', 'Esoneri per impegno', '(nessuno)', '<p class="hint">Non ci sono ancora esoneri approvati né proposte.</p>');
     const orario = k => (risultato.impegni.find(p => p.chiave === k) || {}).orario || '';
     const righe = elenco.map(e => {
       const testo = [dataIt(e.data), e.data.split('-').reverse().join('/'), e.impegno, ...e.approvati.map(nomeDi), ...e.proposti.map(nomeDi)].join(' ').toLowerCase();
       return `<tr data-cerca="${esc(testo)}"><td>${esc(dataIt(e.data))}</td><td>${esc(orario(e.chiave))}</td><td>${esc(e.impegno)}</td>
         <td>${esc(e.approvati.map(nomeDi).join(', ')) || '–'}</td><td class="q40-attesa">${esc(e.proposti.map(nomeDi).join(', '))}</td></tr>`;
     }).join('');
-    return `<section class="q40-esoneri"><h3>Esoneri per impegno</h3>
+    return sezione('esoneri', 'Esoneri per impegno', `(${elenco.length} impegni)`, `<div class="q40-esoneri">
       <div class="q40-barra no-print"><label>Cerca <input type="search" data-q40="cerca" placeholder="giorno (05/10), impegno o docente"></label>
         <button class="btn" data-q40="excelEsoneri">📥 Scarica l'elenco (Excel)</button></div>
       <div class="q40-tabella-box"><table class="q40-mini"><thead><tr><th scope="col">Giorno</th><th scope="col">Orario</th><th scope="col">Impegno</th>
-        <th scope="col">Esonerati (approvati)</th><th scope="col">Proposte in attesa</th></tr></thead><tbody>${righe}</tbody></table></div></section>`;
+        <th scope="col">Esonerati (approvati)</th><th scope="col">Proposte in attesa</th></tr></thead><tbody>${righe}</tbody></table></div></div>`);
   }
   function excelEsoneri() {
     const I = t => ({ v: t, stile: 'intest' });
@@ -158,15 +171,68 @@ const Scheda40 = (() => {
     scarica(Xlsx.crea([{ nome: 'Esoneri', larghezze: [20, 12, 44, 28, 7, 12], blocca: 4, righe }]), `Esoneri 40+40 ${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
+  /*
+    SCUOLE DI COMPLETAMENTO: quante sono e come si chiamano (salvate nel Foglio, scheda «Impostazioni»; all'inizio quelle scritte nella
+    colonna «Scuola di completamento» della scheda «Docenti»). Per ognuna: il piano da mandarle (solo i docenti in comune) e il caricamento
+    del file che arriva da lei, con gli impegni dei nostri docenti in COE presso di loro.
+  */
+  const stessaScuola = (a, b) => { const x = String(a || '').toLowerCase().replace(/\s+/g, ' ').trim(), y = String(b || '').toLowerCase().replace(/\s+/g, ' ').trim(); return !!x && !!y && (x === y || x.includes(y) || y.includes(x)); };
+  const docentiDi = s => risultato.docenti.filter(d => stessaScuola(d.scuola, s));
+  let scuoleScritte = null;   // l'elenco mentre lo si scrive (prima di salvarlo nel Foglio)
+  function elencoScuole() {
+    if (scuoleScritte) return scuoleScritte;
+    if (foglio.scuole && foglio.scuole.length) return foglio.scuole.slice();
+    return [...new Set(risultato.docenti.filter(d => d.scuola).map(d => d.scuola.trim()))].sort((a, b) => a.localeCompare(b, 'it'));
+  }
   function scuole() {
-    const elenco = [...new Set(risultato.docenti.filter(d => d.scuola).map(d => d.scuola))].sort((a, b) => a.localeCompare(b, 'it'));
-    if (!elenco.length) return `<section class="q40-scuole no-print"><h3>Scuole di completamento</h3><p class="hint">Scrivi il nome dell'altra scuola
-      nella colonna «Scuola di completamento» della scheda «Docenti» del Foglio: qui comparirà il tasto per scaricare l'Excel da mandarle,
-      con i soli docenti in comune.</p></section>`;
-    return `<section class="q40-scuole no-print"><h3>Scuole di completamento</h3><p class="hint">Per ogni scuola un Excel con i SOLI docenti in comune:
-      riepilogo, piano con le righe che li riguardano evidenziate, una pagina per docente. Da mandare alla segreteria o al Dirigente.</p><ul>` +
-      elenco.map(s => `<li><button class="btn" data-q40="estratto" data-scuola="${esc(s)}">📥 ${esc(s)}</button>
-        <span class="hint">${esc(risultato.docenti.filter(d => d.scuola === s).map(nome).join(', '))}</span></li>`).join('') + '</ul></section>';
+    const elenco = elencoScuole();
+    const righe = elenco.map((s, i) => {
+      const comuni = s ? docentiDi(s) : [];
+      const esterni = s ? (foglio.esterni || []).filter(x => stessaScuola(x.scuola, s)) : [];
+      return `<li class="q40-scuola"><label class="q40-scuola-nome">Scuola ${i + 1} <input type="text" data-q40s="${i}" value="${esc(s)}" placeholder="es. IC Avigliana" aria-label="Nome della scuola ${i + 1}"></label>
+        <button class="btn" data-q40="estratto" data-scuola="${esc(s)}"${s && comuni.length ? '' : ' disabled'}>📥 Piano per la scuola</button>
+        <label class="btn${s && comuni.length ? '' : ' disabilitato'}">📤 Carica il loro file<input type="file" accept=".xlsx,.ods,.csv" data-q40esterni="${esc(s)}" hidden${s && comuni.length ? '' : ' disabled'}></label>
+        <span class="hint">${!s ? 'scrivi il nome della scuola'
+          : comuni.length ? `docenti in comune: ${esc(comuni.map(nome).join(', '))}${esterni.length ? ` · caricati ${esterni.length} loro impegni` : ''}`
+          : `nessun docente: scrivi «${esc(s)}» nella colonna «Scuola di completamento» della scheda «Docenti» del Foglio`}</span></li>`;
+    }).join('');
+    // docenti in COE con una scuola che non è nell'elenco
+    const fuori = risultato.docenti.filter(d => d.scuola && !elenco.some(s => stessaScuola(d.scuola, s)));
+    return sezione('scuole', 'Scuole di completamento', `(${elenco.filter(Boolean).length})`,
+      `<p class="hint">Per ogni scuola: «Piano per la scuola» crea l'Excel con i SOLI docenti in comune (riepilogo, piano con le righe evidenziate,
+        una pagina per docente) da mandare alla segreteria o al Dirigente; «Carica il loro file» legge il piano che ci mandano loro e completa
+        il piano individuale dei docenti in COE (si vede nel dettaglio del docente e nell'app; le sovrapposizioni di orario finiscono negli avvisi).</p>
+      <label class="q40-num-scuole">Numero di scuole <input type="number" min="0" max="20" data-q40="numeroScuole" value="${elenco.length}" class="q40-num" style="width:64px"></label>
+      <ul class="q40-scuole-elenco">${righe}</ul>
+      ${fuori.length ? `<p class="q40-errore">Docenti con una scuola che non è nell'elenco: ${esc(fuori.map(d => nome(d) + ' (' + d.scuola + ')').join(', '))}.</p>` : ''}`);
+  }
+  // cambia il numero di scuole o un nome: si salva subito nel Foglio
+  async function salvaScuole(lista) {
+    scuoleScritte = lista;
+    stato = 'Salvo l\'elenco delle scuole nel Foglio…'; disegna();
+    // nel Foglio vanno solo i nomi scritti; qui restano anche i campi vuoti, da riempire
+    try { await QuarantaOre.scriviScuole(foglio, lista, opz.email()); stato = '✅ Elenco delle scuole salvato nel Foglio.'; }
+    catch (e) { stato = '⚠️ ' + (e.message || e); }
+    disegna();
+  }
+  // il file che arriva da una scuola di completamento: gli impegni dei docenti in comune presso di loro
+  async function caricaEsterni(file, scuola) {
+    let es;
+    try { es = QuarantaOre.leggiImpegniEsterni(await Foglio.leggiTabelle(file), risultato, scuola); }
+    catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); return; }
+    const chi = [...es.docenti].map(nomeDi).join(', ');
+    const domanda = `Dal file di ${scuola}: ${es.righe} impegni per ${es.docenti.size} docenti (${chi}).` +
+      (es.nonTrovati.size ? ` Non riconosciuti (ignorati): ${[...es.nonTrovati].slice(0, 10).join(', ')}.` : '') +
+      ` Salvarli nella scheda «Impegni altre scuole» del Foglio? Quelli caricati prima da ${scuola} si sostituiscono.`;
+    const esegui = async () => {
+      stato = 'Salvo gli impegni nel Foglio…'; disegna();
+      try {
+        await QuarantaOre.scriviImpegniEsterni(foglio, risultato, scuola, es.voci, opz.email());
+        ricalcola();
+        await pubblica(`Impegni di ${scuola} salvati: ${es.righe}.`);
+      } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
+    };
+    if (typeof chiedi === 'function') chiedi(domanda, esegui, 'Salva'); else if (confirm(domanda)) esegui();
   }
 
   /* ---------- PIANO DI ESONERI (simulazione, calcoli in piano-esoneri.js) ----------
@@ -174,7 +240,7 @@ const Scheda40 = (() => {
      e si salva nella scheda «Esoneri» del Foglio come proposte (da approvare) oppure già approvato. */
   const CHIAVE_PIANO = 'orariofacile.pianoEsoneri';
   const oggiIso = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
-  let piano = null, pianoAperto = false;
+  let piano = null;
   let pianoOggi = '';   // data della fotografia scelta a mano (vuota = oggi); non si ricorda, così domani è di nuovo oggi
   let pianoTolte = [];   // proposte tolte a mano: «codice#data|impegno» (valgono finché non si scarta il piano)
   let pref = Object.assign({}, typeof PianoEsoneri !== 'undefined' ? PianoEsoneri.OPZIONI_PROPOSTE : {}, { ordine: [], perTipo: {} });
@@ -201,7 +267,7 @@ const Scheda40 = (() => {
   function simulaPiano() {
     scaletta();
     piano = PianoEsoneri.simula(risultato, Object.assign({}, pref, { vietati: pianoTolte.slice(), oggi: pianoOggi || oggiIso() }), verificaEsatta);
-    pianoAperto = true;
+    sezioniAperte.add('piano');   // dopo la simulazione il piano si vede
   }
 
   function pianoHtml() {
@@ -217,7 +283,7 @@ const Scheda40 = (() => {
         <button class="btn piccolo" data-q40="pianoSu" data-i="${i}"${i ? '' : ' disabled'} title="Più importante" aria-label="Sposta su ${esc(t.tipo)}">▲</button>
         <button class="btn piccolo" data-q40="pianoGiu" data-i="${i}"${i < tipi.length - 1 ? '' : ' disabled'} title="Meno importante" aria-label="Sposta giù ${esc(t.tipo)}">▼</button></span></li>`;
     }).join('');
-    let h = `<details class="q40-piano"${pianoAperto ? ' open' : ''}><summary><h3>🧮 Piano di esoneri (simulazione)</h3></summary>
+    let h = `
       <p class="hint">Propone a ogni docente con ore in più gli esoneri che servono per rientrare nella soglia, seguendo i criteri qui sotto.
       Prima di salvare puoi vedere il piano e scaricarlo in Excel; salvato, va nella scheda «Esoneri» del Foglio.</p>
       <div class="q40-criteri">
@@ -235,7 +301,7 @@ const Scheda40 = (() => {
       <div class="q40-barra"><button class="btn pubblica" data-q40="pianoSimula">▶ Simula il piano</button>
         ${piano ? '<button class="btn" data-q40="pianoScarta">Scarta il piano</button>' : ''}</div>`;
     if (piano) h += pianoRisultato();
-    return h + '</details>';
+    return sezione('piano', '🧮 Piano di esoneri (simulazione)', piano ? '(simulazione pronta)' : '', h);
   }
 
   /*
@@ -527,7 +593,7 @@ const Scheda40 = (() => {
 
   // ---------- estratto per una scuola di completamento (Excel) ----------
   function estratto(scuola) {
-    const comuni = risultato.docenti.filter(d => d.scuola === scuola);
+    const comuni = docentiDi(scuola);
     const oggi = new Date().toLocaleDateString('it-IT');
     const intest = [[{ v: 'Istituto Comprensivo di Almese – Scuola secondaria di primo grado', stile: 'titolo' }],
       [{ v: `Piano annuale delle attività ${foglio.anno || ''} – docenti in comune con: ${scuola}`, stile: 'grassetto' }],
@@ -610,9 +676,8 @@ const Scheda40 = (() => {
       // il riquadro del piano resta aperto o chiuso quando la scheda si ridisegna («toggle» non risale: si ascolta in cattura)
       box.addEventListener('toggle', e => {
         if (!e.target.classList) return;
-        if (e.target.classList.contains('q40-piano')) pianoAperto = e.target.open;
+        if (e.target.classList.contains('q40-sezione')) { const k = e.target.dataset.sezione; if (e.target.open) sezioniAperte.add(k); else sezioniAperte.delete(k); }
         else if (e.target.classList.contains('q40-protetti')) protettiAperto = e.target.open;
-        else if (e.target.classList.contains('q40-prospetto')) prospettoAperto = e.target.open;
       }, true);
       // «Cerca» negli esoneri per impegno: nasconde le righe che non contengono il testo
       box.addEventListener('input', e => {
@@ -630,6 +695,10 @@ const Scheda40 = (() => {
         if (e.target.id === 'q40File') { const f = [...e.target.files]; e.target.value = ''; if (f.length) importaEsoneri(f); return; }
         if (e.target.id === 'q40Presenze') { const f = e.target.files[0]; e.target.value = ''; if (f) caricaPresenze(f); return; }
         if (e.target.dataset.q40p) { cambioPiano(e.target); return; }
+        // scuole di completamento: numero, nomi, file che arriva da una scuola
+        if (e.target.dataset.q40s !== undefined) { const l = elencoScuole(); l[Number(e.target.dataset.q40s)] = e.target.value.trim(); salvaScuole(l); return; }
+        if (e.target.dataset.q40 === 'numeroScuole') { const n = Math.max(0, Math.min(20, parseInt(e.target.value, 10) || 0)), l = elencoScuole(); while (l.length < n) l.push(''); salvaScuole(l.slice(0, n)); return; }
+        if (e.target.dataset.q40esterni !== undefined) { const fl = e.target.files[0], s = e.target.dataset.q40esterni; e.target.value = ''; if (fl) caricaEsterni(fl, s); return; }
         const b = e.target.closest('input[data-q40]');
         if (!b) return;
         if (b.dataset.q40 === 'visibile') cambiaVisibile(b.closest('tr').dataset.codice, b.checked);

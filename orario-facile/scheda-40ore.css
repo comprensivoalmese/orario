@@ -84,3 +84,23 @@
 .q40-prospetto > summary h3 { display: inline; margin: 0 8px 0 0; }
 /* testo letto solo dai lettori di schermo (la didascalia della tabella, già scritta nel titolo) */
 .q40 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Le sezioni della scheda (Prospetto, Piano di esoneri, Esoneri per impegno, Scuole di completamento) sono tutte uguali:
+   un riquadro che si apre e si chiude toccando il titolo (▸ chiusa, ▾ aperta); all'apertura della scheda sono chiuse */
+.q40-sezione { margin: 12px 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface, transparent); }
+.q40-sezione > summary { cursor: pointer; list-style: none; padding: 4px 0; }
+.q40-sezione > summary::-webkit-details-marker { display: none; }
+.q40-sezione > summary h3 { display: inline; margin: 0 6px 0 0; font-size: 1.05rem; }
+.q40-sezione > summary h3::before { content: '▸ '; color: var(--text-3); }
+.q40-sezione[open] > summary h3::before { content: '▾ '; }
+.q40-sezione[open] > summary { margin-bottom: 8px; }
+/* Scuole di completamento: una riga per scuola con il nome e i due tasti */
+.q40-scuole-elenco { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.q40-scuola { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.q40-scuola-nome input { width: 220px; max-width: 100%; }
+.q40-scuola .btn.disabilitato { opacity: .5; pointer-events: none; }
+.q40-num-scuole { display: inline-flex; align-items: center; gap: 6px; margin: 4px 0; }
+/* impegni presso le altre scuole nel dettaglio di un docente in COE */
+.q40-sottotitolo { margin: 12px 0 4px; font-size: 1rem; }
+.q40-esterno td { font-style: italic; }
+.q40-sovrapposto td { background: color-mix(in srgb, var(--bad, #b3261e) 14%, transparent); }

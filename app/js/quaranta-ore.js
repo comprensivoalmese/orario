@@ -84,29 +84,35 @@ const QuarantaOre = (() => {
     const prendi = zone => fetch(SHEETS + encodeURIComponent(file()) + '/values:batchGet?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER&' +
       zone.map(z => 'ranges=' + encodeURIComponent(z)).join('&'), { cache: 'no-cache', headers: { Authorization: 'Bearer ' + t } });
     const base = ["'Impegni'!A1:L3000", "'Docenti'!A1:L400", "'Impostazioni'!A1:F60"];
-    // le schede facoltative: «Esoneri» e «Presenze» (presenze agli incontri già svolti); si prova con tutte, poi con meno
-    const prove = [["'Esoneri'!A1:G3000", "'Presenze'!A1:F20000"], ["'Esoneri'!A1:G3000"], ["'Presenze'!A1:F20000"], []];
-    let r = null, scelta = [];
-    for (const p of prove) { r = await prendi(base.concat(p)); scelta = p; if (r.status !== 400) break; }
-    if (r.status === 403 || r.status === 404) throw new Error('il tuo account non può aprire il Foglio «40 ore» (va condiviso con chi è autorizzato)');
+    // prima si chiede quali schede ci sono: quelle facoltative («Esoneri», «Presenze», «Impegni altre scuole») si leggono solo se esistono
+    const info = await fetch(SHEETS + encodeURIComponent(file()) + '?fields=sheets.properties.title', { cache: 'no-cache', headers: { Authorization: 'Bearer ' + t } });
+    if (info.status === 403 || info.status === 404) throw new Error('il tuo account non può aprire il Foglio «40 ore» (va condiviso con chi è autorizzato)');
+    if (!info.ok) throw new Error('errore ' + info.status + ' da Google');
+    const titoli = ((await info.json()).sheets || []).map(s => s.properties.title);
+    const facoltative = [['Esoneri', "'Esoneri'!A1:G3000"], ['Presenze', "'Presenze'!A1:F20000"], [SCHEDA_ESTERNI, `'${SCHEDA_ESTERNI}'!A1:H5000`]].filter(([n]) => titoli.includes(n));
+    const r = await prendi(base.concat(facoltative.map(x => x[1])));
     if (r.status === 400) throw new Error('nel Foglio «40 ore» mancano le schede «Impegni», «Docenti» o «Impostazioni»');
     if (!r.ok) throw new Error('errore ' + r.status + ' da Google');
     const valori = ((await r.json()).valueRanges || []).map(v => v.values || []);
     const [imp, doc, set] = valori;
-    const conEsoneri = scelta.some(z => z.startsWith("'Esoneri'")), conPresenze = scelta.some(z => z.startsWith("'Presenze'"));
-    const eso = conEsoneri ? valori[3] : [], pre = conPresenze ? valori[conEsoneri ? 4 : 3] : [];
-    return Object.assign(interpreta(imp, doc, set, eso || [], pre || []), { conEsoneri, conPresenze });
+    const di = nome => { const i = facoltative.findIndex(x => x[0] === nome); return i < 0 ? [] : valori[3 + i] || []; };
+    return Object.assign(interpreta(imp, doc, set, di('Esoneri'), di('Presenze'), di(SCHEDA_ESTERNI)),
+      { conEsoneri: titoli.includes('Esoneri'), conPresenze: titoli.includes('Presenze'), conEsterni: titoli.includes(SCHEDA_ESTERNI) });
   }
+  const SCHEDA_ESTERNI = 'Impegni altre scuole';
 
   // Dalle tabelle del Foglio ai dati: { impegni, docenti, categorie, visibileTutti, anno, colonnaVisibile, esoneri }
-  function interpreta(imp, doc, set, eso, pre) {
+  function interpreta(imp, doc, set, eso, pre, est) {
     // Impostazioni: voce/valore (colonne A-B) e la tabella Tipo → Conta in (dove la si trova)
     const categorie = Object.assign({}, CATEGORIE);
-    let visibileTutti = false, anno = '';
-    (set || []).forEach(r => {
+    let visibileTutti = false, anno = '', scuole = [], rigaScuole = 0, ultimaRigaVoci = 0;
+    (set || []).forEach((r, i) => {
       const voce = semplice(r[0]);
+      if (voce) ultimaRigaVoci = i + 1;
       if (voce.includes('visibile')) visibileTutti = si(r[1]);
       if (voce.includes('anno')) anno = String(r[1] || '');
+      // l'elenco delle scuole di completamento (scheda 40+40), separate da «;»
+      if (voce.includes('scuole di completamento')) { rigaScuole = i + 1; scuole = String(r[1] || '').split(/[;\n]/).map(x => x.trim()).filter(Boolean); }
     });
     const ri = (set || []).findIndex(r => r.some(c => semplice(c) === 'conta in'));
     if (ri >= 0) {
@@ -172,9 +178,10 @@ const QuarantaOre = (() => {
       esoneri.get(codice).set(dd + '|' + imp, { approvato: e.approvato >= 0 && si(r[e.approvato]), riga: i + 2 });
     });
     const presenze = presenzeDaRighe(pre);
-    return { impegni, docenti, categorie, visibileTutti, anno, colonnaVisibile: d.visibile, colonnaFormazione: d.formazione, colonneDocenti: di.length,
+    const esterni = esterniDaRighe(est);
+    return { impegni, docenti, categorie, visibileTutti, anno, scuole, rigaScuole, ultimaRigaVoci, colonnaVisibile: d.visibile, colonnaFormazione: d.formazione, colonneDocenti: di.length,
       colonnaImpostazioni: (set || []).findIndex(r => semplice(r[0]).includes('visibile')), esoneri, righeEsoneri: (eso || []).slice(1), colonnaApprovato: e.approvato,
-      presenze, righePresenze: (pre || []).slice(1) };
+      presenze, righePresenze: (pre || []).slice(1), esterni, righeEsterni: (est || []).slice(1) };
   }
   /*
     Scheda «Presenze» (incontri già svolti): Data, Impegno, Codice, Docente, Presente (SI/NO), Note – una riga per docente e incontro.
@@ -194,6 +201,37 @@ const QuarantaOre = (() => {
       presenze.get(codice).set(dd + '|' + imp, si(v));
     });
     return presenze;
+  }
+  /*
+    Scheda «Impegni altre scuole» (docenti in COE): Scuola, Codice, Docente, Data, Orario, Impegno, Ore, Conta in.
+    → [{ scuola, codice, data, orario, impegno, ore, conta }]. Non contano nelle 40+40 di questa scuola: completano il piano del docente.
+  */
+  function esterniDaRighe(est) {
+    const ei = (est || [])[0] || [];
+    const c = { scuola: colonna(ei, t => t.startsWith('scuola')), codice: colonna(ei, t => t.startsWith('codice')), data: colonna(ei, t => t.startsWith('data')),
+      orario: colonna(ei, t => t.startsWith('orario')), impegno: colonna(ei, t => t.startsWith('impegno')), ore: colonna(ei, t => t === 'ore' || t.startsWith('ore ')),
+      conta: colonna(ei, t => t.startsWith('conta')) };
+    if (c.codice < 0 || c.data < 0 || c.impegno < 0) return [];
+    const v = (r, k) => c[k] >= 0 ? r[c[k]] : '';
+    return (est || []).slice(1).map(r => {
+      const impegno = String(v(r, 'impegno') || '').trim();
+      return { scuola: String(v(r, 'scuola') || '').trim(), codice: String(v(r, 'codice') || '').trim().toUpperCase(), data: data(v(r, 'data')),
+        orario: String(v(r, 'orario') || '').trim(), impegno, ore: numero(v(r, 'ore')) || 0, conta: contaDa(v(r, 'conta'), impegno) };
+    }).filter(x => x.codice && x.data && x.impegno);
+  }
+  // «prime 40», «A», «seconde 40», «B», «formazione», «non conta»… → prime / seconde / formazione / no / altro (se manca: dal nome dell'impegno)
+  function contaDa(v, impegno) {
+    const t = semplice(v);
+    if (/^prim|^a\b/.test(t)) return 'prime';
+    if (/^second|^b\b/.test(t)) return 'seconde';
+    if (/formaz/.test(t)) return 'formazione';
+    if (/non conta|^no\b|scrutin|esam/.test(t)) return 'no';
+    return indovina(t || impegno);
+  }
+  // «15:00–17:00» (anche con il trattino corto) → [inizio, fine] in minuti, oppure [null, null]
+  function intervallo(orario) {
+    const m = String(orario || '').match(/(\d{1,2})[:.](\d{2})\s*[–\-—]\s*(\d{1,2})[:.](\d{2})/);
+    return m ? [+m[1] * 60 + +m[2], +m[3] * 60 + +m[4]] : [null, null];
   }
   /*
     Scrutini ed esami con la colonna Classi vuota: le classi si ricavano dal titolo, così ogni docente risulta solo nei suoi
@@ -325,16 +363,31 @@ const QuarantaOre = (() => {
       const esonerate = arrotonda(dettaglio.filter(x => x.esonero && (x.conta === 'prime' || x.conta === 'seconde')).reduce((s, x) => s + x.ore, 0));
       const proposteOre = arrotonda(dettaglio.filter(x => x.proposto && (x.conta === 'prime' || x.conta === 'seconde')).reduce((s, x) => s + x.ore, 0));
       const assenze = arrotonda(dettaglio.filter(x => x.assente && (x.conta === 'prime' || x.conta === 'seconde')).reduce((s, x) => s + x.ore, 0));
+      // impegni presso le ALTRE scuole (docenti in COE): non contano qui, completano il piano del docente; si cercano le sovrapposizioni
+      const esterni = (foglio.esterni || []).filter(x => x.codice === d.codice).sort((a, b) => (a.data + a.orario).localeCompare(b.data + b.orario));
+      const oreEsterne = { prime: arrotonda(esterni.filter(x => x.conta === 'prime').reduce((s, x) => s + x.ore, 0)),
+        seconde: arrotonda(esterni.filter(x => x.conta === 'seconde').reduce((s, x) => s + x.ore, 0)) };
+      const conflitti = [];
+      esterni.forEach(x => {
+        const [a, b] = intervallo(x.orario); if (a == null) return;
+        dettaglio.filter(y => y.data === x.data && !y.esonero && !y.assente).forEach(y => {
+          const [c, e] = intervallo(y.orario);
+          if (c != null && a < e && c < b) conflitti.push({ data: x.data, nostro: y.impegno, nostroOrario: y.orario, loro: x.impegno, loroOrario: x.orario, scuola: x.scuola });
+        });
+      });
       // formazione: quella scritta negli impegni + le ore attribuite al docente nella scheda «Docenti»
       tot.formazione += d.oreFormazione || 0;
       const dov = dovute(d.tipo, d.oreSett);
       return Object.assign({}, d, {
         classi: [...mie].sort(), dovute: dov,
-        prime: arrotonda(tot.prime), seconde: arrotonda(tot.seconde), formazione: arrotonda(tot.formazione), nonConta: arrotonda(tot.no), esonerate, proposte: proposteOre, assenze,
+        prime: arrotonda(tot.prime), seconde: arrotonda(tot.seconde), formazione: arrotonda(tot.formazione), nonConta: arrotonda(tot.no), esonerate, proposte: proposteOre, assenze, esterni, oreEsterne, conflitti,
         residuoPrime: arrotonda(dov - tot.prime), residuoSeconde: arrotonda(dov - tot.seconde),
         residuo: arrotonda(2 * dov - tot.prime - tot.seconde - tot.formazione), dettaglio
       });
     }).sort((a, b) => (a.nome || a.codice).localeCompare(b.nome || b.codice, 'it'));
+    // le sovrapposizioni con gli impegni delle altre scuole
+    docenti.forEach(d => d.conflitti.forEach(c => avvisi.push(`${d.nome || d.codice}: il ${c.data.split('-').reverse().join('/')} «${c.nostro}» (${c.nostroOrario}) ` +
+      `si sovrappone a «${c.loro}» presso ${c.scuola || 'l\'altra scuola'} (${c.loroOrario}).`)));
     const daApprovare = docenti.filter(d => d.dettaglio.some(x => x.proposto));
     if (daApprovare.length) avvisi.unshift(`Proposte di esonero da approvare: ${daApprovare.map(d => (d.nome || d.codice) + ' (' + d.dettaglio.filter(x => x.proposto).length + ')').join(', ')}. Apri il dettaglio del docente per approvarle.`);
     // gli incontri con le presenze registrate (scheda «Presenze»)
@@ -561,6 +614,79 @@ const QuarantaOre = (() => {
     }
     throw new Error('non trovo le presenze nel file: servono le colonne Data e Docente (o Cognome e Nome), oppure una griglia con le date nei titoli delle colonne');
   }
+  /* ---------- IMPEGNI DELLE ALTRE SCUOLE (docenti in COE) ----------
+     L'altra scuola manda il piano dei docenti in comune; leggiImpegniEsterni capisce:
+     - un foglio per docente (come l'estratto che mandiamo noi): il nome del docente nel nome del foglio o nelle prime righe, poi
+       le colonne Giorno/Data, Orario, Impegno, Ore, Conta in;
+     - un elenco unico con la colonna Docente (o Cognome e Nome) e le stesse colonne.
+     Le ore mancanti si ricavano dall'orario («15:00–17:00» = 2); «Conta in» (prime/seconde, A/B…) se manca si ricava dal nome. */
+  function leggiImpegniEsterni(tabelle, risultato, scuola) {
+    const tutti = risultato.docenti.map(d => ({ codice: d.codice, nome: d.nome || '', scuola: d.scuola || '' }));
+    // prima si cercano i docenti di quella scuola, poi tutti
+    const suoi = tutti.filter(d => semplice(d.scuola) && (semplice(d.scuola).includes(semplice(scuola)) || semplice(scuola).includes(semplice(d.scuola))));
+    const trova = testo => trovaDocente(testo, suoi) || trovaDocente(testo, tutti);
+    const esito = { voci: [], docenti: new Set(), nonTrovati: new Set(), righe: 0 };
+    for (const tab of tabelle || []) {
+      const righe = tab.righe || [];
+      for (let i = 0; i < Math.min(15, righe.length); i++) {
+        const h = righe[i].map(semplice);
+        const cData = h.findIndex(c => /^(giorno|data)/.test(c)), cImp = h.findIndex(c => /impegno|attivit|riunione|oggetto/.test(c));
+        if (cData < 0 || cImp < 0) continue;
+        const cOrario = h.findIndex(c => c.startsWith('orario')), cIni = h.findIndex(c => c.startsWith('inizio')), cFin = h.findIndex(c => c.startsWith('fine'));
+        const cOre = h.findIndex(c => c === 'ore' || c.startsWith('ore ') || c.startsWith('durata')), cConta = h.findIndex(c => /conta|categoria|tipo/.test(c));
+        const cCogn = h.findIndex(c => c.startsWith('cognome')), cNome = h.findIndex(c => c === 'nome'), cDoc = h.findIndex(c => /^(docente|nominativo|codice)/.test(c));   // non «Orario del docente» né «Docenti in comune»
+        // il docente del foglio intero (un foglio per docente): dal nome del foglio o dal testo delle prime righe
+        let delFoglio = null;
+        if (cDoc < 0 && cCogn < 0) {
+          delFoglio = trova(tab.nome);
+          for (let j = 0; j < i && !delFoglio; j++) delFoglio = trova(righe[j].filter(x => x !== '' && x != null).join(' '));
+          if (!delFoglio) break;   // né colonna del docente né nome riconoscibile: il foglio non riguarda un docente (es. «Piano»)
+        }
+        righe.slice(i + 1).forEach(r => {
+          const dd = data(r[cData]), imp = String(r[cImp] || '').trim();
+          if (!dd || !imp) return;
+          const testo = cDoc >= 0 ? r[cDoc] : cCogn >= 0 ? String(r[cCogn] || '') + (cNome >= 0 ? ' ' + String(r[cNome] || '') : '') : '';
+          const d = delFoglio || trova(testo);
+          if (!d) { if (String(testo || '').trim()) esito.nonTrovati.add(String(testo).trim()); return; }
+          let orario = cOrario >= 0 ? String(r[cOrario] || '').trim() : '';
+          if (!orario && cIni >= 0 && cFin >= 0) { const a = minuti(r[cIni]), b = minuti(r[cFin]); if (a != null && b != null) orario = hhmm(a) + '–' + hhmm(b); }
+          const [a, b] = intervallo(orario);
+          const ore = cOre >= 0 && numero(r[cOre]) != null ? numero(r[cOre]) : (a != null && b > a ? arrotonda((b - a) / 60) : 0);
+          esito.voci.push({ codice: d.codice, data: dd, orario, impegno: imp, ore, conta: contaDa(cConta >= 0 ? r[cConta] : '', imp) });
+          esito.docenti.add(d.codice); esito.righe++;
+        });
+        break;
+      }
+    }
+    if (!esito.righe) throw new Error('nel file non trovo impegni dei docenti in comune: servono le colonne Giorno (o Data) e Impegno, e il docente (colonna o nome del foglio)');
+    return esito;
+  }
+  // Scrive gli impegni di una scuola nella scheda «Impegni altre scuole»: quelli di prima di QUELLA scuola si sostituiscono
+  async function scriviImpegniEsterni(foglio, risultato, scuola, voci, email) {
+    if (!foglio.conEsterni) {
+      await chiamaFoglio(':batchUpdate', 'POST', { requests: [{ addSheet: { properties: { title: SCHEDA_ESTERNI } } }] }, email);
+      foglio.conEsterni = true; foglio.righeEsterni = [];
+    }
+    const nomeDi = c => (risultato.docenti.find(d => d.codice === c) || {}).nome || '';
+    const TITOLI = ['Scuola', 'Codice', 'Docente', 'Data', 'Orario', 'Impegno', 'Ore', 'Conta in'];
+    const altre = (foglio.righeEsterni || []).filter(r => semplice(r[0]) !== semplice(scuola) && r.some(c => c !== '' && c != null))
+      .map(r => [r[0], r[1], r[2], dataIt(r[3]), r[4], r[5], r[6], r[7]]);
+    const nuove = voci.map(v => [scuola, v.codice, nomeDi(v.codice), v.data.split('-').reverse().join('/'), v.orario, v.impegno, v.ore, NOMI_CONTA[v.conta] || v.conta]);
+    const valori = [TITOLI].concat(altre, nuove);
+    await chiamaFoglio('/values/' + encodeURIComponent(`'${SCHEDA_ESTERNI}'!A:H`) + ':clear', 'POST', {}, email);
+    await chiamaFoglio('/values/' + encodeURIComponent(`'${SCHEDA_ESTERNI}'!A1:H${valori.length}`) + '?valueInputOption=USER_ENTERED', 'PUT', { values: valori }, email);
+    foglio.righeEsterni = altre.concat(nuove);
+    foglio.esterni = esterniDaRighe(valori);
+  }
+  // L'elenco delle scuole di completamento nella scheda «Impostazioni» (voce «Scuole di completamento», valore «IC A; IC B»):
+  // nella sua riga se c'è già, altrimenti nella prima riga libera dopo le altre voci (colonne A-B: la tabella dei tipi sta in D-E)
+  async function scriviScuole(foglio, lista, email) {
+    const riga = foglio.rigaScuole || (foglio.ultimaRigaVoci || 2) + 1;
+    await chiamaFoglio('/values/' + encodeURIComponent(`'Impostazioni'!A${riga}:B${riga}`) + '?valueInputOption=RAW', 'PUT',
+      { values: [['Scuole di completamento (separate da ;)', lista.filter(Boolean).join('; ')]] }, email);
+    foglio.rigaScuole = riga; foglio.ultimaRigaVoci = Math.max(foglio.ultimaRigaVoci || 0, riga);
+    foglio.scuole = lista.filter(Boolean);
+  }
   // Scrive le presenze nella scheda «Presenze»: per gli incontri caricati sostituisce le righe di prima, le altre restano
   async function scriviPresenze(foglio, risultato, voci, email) {
     if (!foglio.conPresenze) {
@@ -634,6 +760,12 @@ const QuarantaOre = (() => {
     blocco('A – Prime 40: collegio docenti, dipartimenti, programmazione, plesso, incontri con le famiglie', 'prime');
     blocco('B – Seconde 40: consigli di classe e GLO', 'seconde');
     if (d.formazione) righe.push(['', '', 'Formazione obbligatoria (conta nelle ore che restano delle 80)', d.formazione]);
+    // docenti in COE: gli impegni presso l'altra scuola, per avere il piano completo (non contano qui, non si chiede l'esonero)
+    if ((d.esterni || []).length) {
+      righe.push([], [{ v: 'Impegni presso l\'altra scuola (solo da vedere: non contano qui)', stile: 'grassetto' }]);
+      righe.push(['Giorno', 'Orario', 'Impegno', 'Ore', 'Scuola'].map(I));
+      d.esterni.forEach(x => righe.push([giornoLungo(x.data), x.orario, x.impegno, x.ore, x.scuola + ' · ' + (NOMI_CONTA[x.conta] || x.conta)]));
+    }
     righe.push([d.tipo && d.tipo !== 'COI' ? `${d.tipo} con ${d.oreSett} ore settimanali: le ore dovute sono in proporzione (O.M. 446/1997 art. 7 c. 7).` : '']);
     return [{ nome: 'Le mie 40+40', larghezze: [20, 12, 50, 8, 13, 20], nascoste: [5], righe, elenchi: zone.length ? [{ zona: zone.join(' '), valori: ['SI', 'NO'] }] : [] }];
   }
@@ -669,7 +801,9 @@ const QuarantaOre = (() => {
         tipo: d.tipo, oreSett: d.oreSett, dovute: d.dovute, prime: d.prime, seconde: d.seconde, formazione: d.formazione,
         dal: d.dal || '', esonerate: d.esonerate || 0, proposte: d.proposte || 0, assenze: d.assenze || 0,
         // ultimo numero: 1 = esonerato, 2 = esonero proposto, 3 = assente (presenze registrate), 0 = niente
-        dettaglio: d.dettaglio.map(x => [x.data, x.orario, x.impegno, x.ore, x.conta, x.esonero ? 1 : x.proposto ? 2 : x.assente ? 3 : 0])
+        dettaglio: d.dettaglio.map(x => [x.data, x.orario, x.impegno, x.ore, x.conta, x.esonero ? 1 : x.proposto ? 2 : x.assente ? 3 : 0]),
+        // impegni presso le altre scuole (docenti in COE): [data, orario, impegno, ore, conta, scuola]
+        esterni: (d.esterni || []).map(x => [x.data, x.orario, x.impegno, x.ore, x.conta, x.scuola])
       };
     });
     return { tipo: 'quaranta-ore', anno: foglio.anno, aggiornato: new Date().toISOString(), docenti };
@@ -724,14 +858,18 @@ const QuarantaOre = (() => {
       <table class="q40-dettaglio"><caption>Impegni dell'anno</caption>
       <thead><tr><th scope="col">Giorno</th><th scope="col">Orario</th><th scope="col">Impegno</th><th scope="col">Ore</th><th scope="col">Conta in</th></tr></thead>
       <tbody>${dett}</tbody></table>
+      ${(d.esterni || []).length ? `<table class="q40-dettaglio q40-esterni"><caption>Impegni presso l'altra scuola (non contano qui: le ore dovute sono divise in proporzione)</caption>
+      <thead><tr><th scope="col">Giorno</th><th scope="col">Orario</th><th scope="col">Impegno</th><th scope="col">Ore</th><th scope="col">Scuola</th></tr></thead>
+      <tbody>${d.esterni.map(([data, orario, imp, h, conta, scuola]) => `<tr class="${data < oggi ? 'q40-passato' : ''}"><td>${esc(giorno(data))}</td><td>${esc(orario)}</td><td>${esc(imp)}</td><td>${ore(h)}</td><td>${esc(scuola)} · ${esc(NOMI_CONTA[conta] || conta)}</td></tr>`).join('')}</tbody></table>` : ''}
       <p class="q40-nota">Calcolo dal Piano delle attività e dalle tue classi${aggiornato ? ', aggiornato il ' + esc(new Date(aggiornato).toLocaleDateString('it-IT')) : ''}.
       Scrutini ed esami non contano nelle 40+40. Per correzioni rivolgiti alla segreteria o a chi gestisce l'orario.</p>`;
   }
 
   // Una voce pubblicata (dettaglio come array) nella forma usata da excelDocente
   const daPubblicato = (d, codice, nome) => Object.assign({}, d, { codice, nome,
-    dettaglio: d.dettaglio.map(([data, orario, impegno, ore, conta, esonero]) => ({ data, orario, impegno, ore, conta, esonero: esonero === 1, proposto: esonero === 2, assente: esonero === 3 })) });
+    dettaglio: d.dettaglio.map(([data, orario, impegno, ore, conta, esonero]) => ({ data, orario, impegno, ore, conta, esonero: esonero === 1, proposto: esonero === 2, assente: esonero === 3 })),
+    esterni: (d.esterni || []).map(([data, orario, impegno, ore, conta, scuola]) => ({ data, orario, impegno, ore, conta, scuola })) });
 
   return { configurato, leggiFoglio, interpreta, classiDaOrario, calcola, scriviVisibile, scriviVisibileTutti, scriviFormazione, scriviEsoneri, scriviEsoneriTutti, scriviApprovato, togliEsoneri, esoneriPerImpegno,
-    leggiPresenzeDaTabelle, scriviPresenze, modelloPresenze, excelDocente, leggiEsoneriDaExcel, daPubblicato, pubblica, datiDaPubblicare, leggiPubblicato, htmlDocente, NOMI_CONTA, dovute, file };
+    leggiPresenzeDaTabelle, scriviPresenze, modelloPresenze, scriviScuole, leggiImpegniEsterni, scriviImpegniEsterni, excelDocente, leggiEsoneriDaExcel, daPubblicato, pubblica, datiDaPubblicare, leggiPubblicato, htmlDocente, NOMI_CONTA, dovute, file };
 })();
