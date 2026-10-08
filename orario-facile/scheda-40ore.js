@@ -19,6 +19,7 @@ const Scheda40 = (() => {
   let box = null, opz = null;
   let foglio = null, risultato = null, classiCorrenti = null, errore = '', inCorso = false, stato = '';
   const aperti = new Set();
+  let prospettoAperto = true;   // il riquadro del prospetto è aperto (si chiude toccando il titolo)
 
   // ---------- chi può vedere la scheda ----------
   let permesso = null;   // null = non ancora saputo
@@ -102,12 +103,14 @@ const Scheda40 = (() => {
       if (aperto) r += `<tr class="q40-dettaglio"><td colspan="13">${dettaglio(d)}</td></tr>`;
       return r;
     }).join('');
-    return `<div class="q40-tabella-box"><table class="q40-tabella"><caption>Prospetto 40+40 per docente${foglio.anno ? ' – ' + esc(foglio.anno) : ''}
-        <span class="hint">(tocca un nome per il dettaglio; in rosso le ore oltre il dovuto)</span></caption>
+    // il prospetto si contrae toccando il titolo (resta così anche quando la scheda si ridisegna)
+    return `<details class="q40-prospetto"${prospettoAperto ? ' open' : ''}><summary><h3>Prospetto 40+40 per docente${foglio.anno ? ' – ' + esc(foglio.anno) : ''}</h3>
+        <span class="hint">(${risultato.docenti.length} docenti · tocca un nome per il dettaglio; in rosso le ore oltre il dovuto)</span></summary>
+      <div class="q40-tabella-box"><table class="q40-tabella"><caption class="visually-hidden">Prospetto 40+40 per docente</caption>
       <thead><tr><th scope="col">Docente</th><th scope="col">Tipo</th><th scope="col">Ore sett.</th><th scope="col">Dovute (per ciascuna)</th>
         <th scope="col">Prime 40</th><th scope="col">Seconde 40</th><th scope="col">Formazione obbligatoria (ore)</th><th scope="col">Esonerate</th><th scope="col">Assenze (ore, non contano)</th>
         <th scope="col">Restano prime</th><th scope="col">Restano seconde</th><th scope="col">Restano in tutto</th><th scope="col">Visibile</th></tr></thead>
-      <tbody>${righe}</tbody></table></div>`;
+      <tbody>${righe}</tbody></table></div></details>`;
   }
   function dettaglio(d) {
     if (!d.dettaglio.length) return '<p class="hint">Nessun impegno: controlla le classi del docente nell\'orario.</p>';
@@ -609,6 +612,7 @@ const Scheda40 = (() => {
         if (!e.target.classList) return;
         if (e.target.classList.contains('q40-piano')) pianoAperto = e.target.open;
         else if (e.target.classList.contains('q40-protetti')) protettiAperto = e.target.open;
+        else if (e.target.classList.contains('q40-prospetto')) prospettoAperto = e.target.open;
       }, true);
       // «Cerca» negli esoneri per impegno: nasconde le righe che non contengono il testo
       box.addEventListener('input', e => {

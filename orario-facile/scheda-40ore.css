@@ -77,3 +77,10 @@
 .q40-togli-proposta { padding: 0 6px; line-height: 1.4; margin-left: 2px; }
 /* incontro già svolto a cui il docente era assente (scheda «Presenze»): non conta */
 .q40-assente td { text-decoration: line-through; font-style: italic; opacity: .75; }
+
+/* Prospetto per docente: si contrae toccando il titolo */
+.q40-prospetto { margin: 12px 0; }
+.q40-prospetto > summary { cursor: pointer; padding: 6px 0; }
+.q40-prospetto > summary h3 { display: inline; margin: 0 8px 0 0; }
+/* testo letto solo dai lettori di schermo (la didascalia della tabella, già scritta nel titolo) */
+.q40 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
