@@ -12,6 +12,7 @@
     usaPresenze  – ogni impegno resta «pieno»: al massimo una certa percentuale (orientativa, anche diversa per tipo) di esonerati
                    e almeno un numero minimo di presenti;
     stessoGiorno – si cerca di esonerare la stessa persona da tutti gli impegni dello stesso giorno;
+    protetti     – singoli incontri da cui non si esonera nessuno (es. un solo collegio), anche se il loro tipo lo permetterebbe;
     usaPriorita  – una scaletta dei tipi di impegno: in alto i più importanti (es. Collegio docenti), da cui si esonera solo se
                    proprio serve; per ogni tipo si può anche dire «mai»;
     richieste    – si preferiscono gli impegni da cui il docente ha chiesto l'esonero (le sue proposte nel Foglio).
@@ -39,7 +40,7 @@ const PianoEsoneri = (() => {
     usaRiserva: true, riservaA: 5, riservaB: 5, formazioneInB: false,
     usaPresenze: true, pct: 30, minimo: 3,
     stessoGiorno: true, usaPriorita: true, richieste: true,
-    ordine: [], perTipo: {}
+    ordine: [], perTipo: {}, protetti: []
   };
 
   // I tipi di impegno che contano nelle 40+40, nell'ordine proposto: [{ id, tipo, conta, quanti }]
@@ -59,6 +60,9 @@ const PianoEsoneri = (() => {
     const impDi = new Map(risultato.impegni.map(p => [p.chiave, p]));
     const tipoDi = k => semplice((impDi.get(k) || {}).tipo || 'Altro');
     const regola = k => (opz.perTipo || {})[tipoDi(k)] || {};
+    // nessun esonero: il tipo è «mai» oppure il singolo incontro è protetto (🔒 nella scheda)
+    const protetti = new Set(opz.protetti || []);
+    const vietato = k => !!regola(k).mai || protetti.has(k);
     // posizione nella scaletta: 0 = il più importante
     const ordine = opz.ordine && opz.ordine.length ? opz.ordine : tipi(risultato).map(t => t.id);
     const N = Math.max(1, ordine.length);
@@ -101,7 +105,7 @@ const PianoEsoneri = (() => {
       const b = bisogno.get(d.codice), mie = scelte.get(d.codice);
       const libere = d.dettaglio.filter(x => {
         const k = chiave(x);
-        return conta(x) && b[x.conta] > POCO && !x.esonero && !mie.has(k) && x.ore > 0 && !regola(k).mai && (carico.get(k) || 0) < tetto(k);
+        return conta(x) && b[x.conta] > POCO && !x.esonero && !mie.has(k) && x.ore > 0 && !vietato(k) && (carico.get(k) || 0) < tetto(k);
       });
       if (!libere.length) return false;
       const gruppi = new Map();
@@ -179,7 +183,7 @@ const PianoEsoneri = (() => {
         });
         // SCAMBI: un esonero lungo si cambia con uno più corto (non più importante) se basta lo stesso. Con «stesso giorno» non
         // si toccano le giornate con più esoneri, che restano libere per intero
-        const liberi = d.dettaglio.filter(y => { const k = chiave(y); return conta(y) && !y.esonero && !mie.has(k) && y.ore > 0 && !regola(k).mai && (carico.get(k) || 0) < tetto(k); });
+        const liberi = d.dettaglio.filter(y => { const k = chiave(y); return conta(y) && !y.esonero && !mie.has(k) && y.ore > 0 && !vietato(k) && (carico.get(k) || 0) < tetto(k); });
         [...mie.entries()].sort(([, xa], [, xb]) => xb.ore - xa.ore).forEach(([k, x]) => {
           if (opz.stessoGiorno && [...mie.values()].filter(z => z.data === x.data).length > 1) return;
           const migliore = liberi.filter(y => y.conta === x.conta && y.ore < x.ore && !mie.has(chiave(y)) && (carico.get(chiave(y)) || 0) < tetto(chiave(y)) &&
@@ -225,7 +229,7 @@ const PianoEsoneri = (() => {
     const impegni = [...attesi.keys()].map(k => {
       const p = impDi.get(k) || {}, n = attesi.get(k) || 0, g = gia.get(k) || 0, c = carico.get(k) || 0;
       return { chiave: k, data: p.data || k.split('|')[0], orario: p.orario || '', impegno: p.impegno || k.split('|')[1], tipo: p.tipo || '', conta: p.conta,
-        attesi: n, gia: g, nuovi: c - g, esonerati: c, presenti: n - c, tetto: tetto(k), pct: n ? Math.round(c / n * 100) : 0 };
+        attesi: n, gia: g, nuovi: c - g, esonerati: c, presenti: n - c, tetto: tetto(k), pct: n ? Math.round(c / n * 100) : 0, protetto: vietato(k) };
     }).sort((a, b) => a.chiave.localeCompare(b.chiave));
     const interessati = docenti.filter(d => d.prima.prime - d.soglia.prime > POCO || d.prima.seconde - d.soglia.seconde > POCO);
     const riepilogo = {

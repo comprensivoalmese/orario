@@ -69,3 +69,8 @@
 .q40-sintesi { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .q40-elenco { margin: 0; padding-left: 16px; }
 .q40-piano-tab td { vertical-align: top; }
+.q40-protetti { margin-left: 26px; }
+.q40-protetti summary { cursor: pointer; font-weight: 600; }
+.q40-protetti-elenco { list-style: none; margin: 6px 0 0; padding: 0; max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+.q40-protetti-elenco li { padding: 3px 8px; border-bottom: 1px solid var(--line); }
+.q40-protetti-elenco li:last-child { border-bottom: 0; }

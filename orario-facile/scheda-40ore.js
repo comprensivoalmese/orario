@@ -217,11 +217,33 @@ const Scheda40 = (() => {
         ${spunta('richieste', 'Accogli per prime le richieste dei docenti (le loro proposte di esonero nel Foglio)')}
         ${spunta('usaPriorita', 'Priorità degli impegni: in alto i più importanti, da cui si esonera solo se proprio serve («mai» = nessun esonero)')}
         <ol class="q40-scaletta">${righeTipi}</ol>
+        ${protettiHtml()}
       </div>
       <div class="q40-barra"><button class="btn pubblica" data-q40="pianoSimula">▶ Simula il piano</button>
         ${piano ? '<button class="btn" data-q40="pianoScarta">Scarta il piano</button>' : ''}</div>`;
     if (piano) h += pianoRisultato();
     return h + '</details>';
+  }
+
+  /*
+    SINGOLI INCONTRI PROTETTI: l'elenco di tutti gli incontri che contano nelle 40+40, ognuno con il lucchetto. Uno spuntato non avrà
+    esoneri, anche se il suo tipo li permette (es. solo il collegio di settembre). Le chiavi («data|impegno») restano sul dispositivo.
+  */
+  let protettiAperto = false;
+  function protettiHtml() {
+    pref.protetti = pref.protetti || [];
+    const elenco = risultato.impegni.filter(p => p.conta === 'prime' || p.conta === 'seconde');
+    const n = pref.protetti.filter(k => elenco.some(p => p.chiave === k)).length;
+    const righe = elenco.map(p => {
+      const si = pref.protetti.includes(p.chiave);
+      const testo = [dataIt(p.data), p.data.split('-').reverse().join('/'), p.impegno, p.tipo].join(' ').toLowerCase();
+      return `<li data-cerca="${esc(testo)}"><label class="q40-criterio"><input type="checkbox" data-q40p="prot:${esc(p.chiave)}"${si ? ' checked' : ''}>
+        <span>${si ? '🔒 ' : ''}<b>${esc(dataIt(p.data))}</b> ${esc(p.orario)} · ${esc(p.impegno)} <span class="hint">(${esc(p.tipo || '')})</span></span></label></li>`;
+    }).join('');
+    return `<details class="q40-protetti"${protettiAperto ? ' open' : ''}><summary>🔒 Proteggi singoli incontri <span class="hint">(${n} protetti)</span></summary>
+      <p class="hint">Gli incontri spuntati non avranno esoneri, anche se il loro tipo nella scaletta li permetterebbe.</p>
+      <label>Cerca <input type="search" data-q40="cercaProtetti" placeholder="giorno (05/10), impegno o tipo"></label>
+      <ul class="q40-protetti-elenco">${righe}</ul></details>`;
   }
 
   function pianoRisultato() {
@@ -239,7 +261,7 @@ const Scheda40 = (() => {
     }).join('');
     const imp = piano.impegni.filter(x => x.esonerati).map(x => {
       const sopra = piano.opzioni.usaPresenze && x.esonerati > x.tetto;   // oltre il massimo (succede solo con esoneri già approvati)
-      return `<tr${sopra ? ' class="q40-proposto"' : ''}><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${esc(x.impegno)}</td><td>${esc(x.tipo)}</td>
+      return `<tr${sopra ? ' class="q40-proposto"' : ''}><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${x.protetto ? '🔒 ' : ''}${esc(x.impegno)}</td><td>${esc(x.tipo)}</td>
         <td class="num">${x.attesi}</td><td class="num">${x.gia ? x.gia + ' + ' : ''}${x.nuovi}</td><td class="num">${x.presenti}</td><td class="num">${x.pct}%</td></tr>`;
     }).join('');
     return `<div class="q40-sintesi">
@@ -260,7 +282,10 @@ const Scheda40 = (() => {
 
   function cambioPiano(el) {
     const c = el.dataset.q40p;
-    if (c.startsWith('pct:') || c.startsWith('mai:')) {
+    if (c.startsWith('prot:')) {   // un singolo incontro protetto (o non più)
+      const k = c.slice(5); pref.protetti = (pref.protetti || []).filter(x => x !== k);
+      if (el.checked) pref.protetti.push(k);
+    } else if (c.startsWith('pct:') || c.startsWith('mai:')) {
       const id = c.slice(4), r = pref.perTipo[id] = pref.perTipo[id] || {};
       if (c.startsWith('pct:')) r.pct = el.value === '' ? null : Math.max(0, Math.min(100, Number(el.value) || 0)); else r.mai = el.checked;
     } else if (el.type === 'checkbox') pref[c] = el.checked;
@@ -302,7 +327,8 @@ const Scheda40 = (() => {
       o.usaPresenze ? `Al massimo ${o.pct}% di esonerati per impegno (orientativo), almeno ${o.minimo} presenti` : 'Nessun limite di esonerati per impegno',
       o.stessoGiorno ? 'Stesso giorno: la stessa persona per tutti gli impegni della giornata' : '',
       o.richieste ? 'Accolte per prime le richieste dei docenti' : '',
-      o.usaPriorita ? 'Priorità (dal più importante): ' + scaletta().map(t => t.tipo + ((o.perTipo[t.id] || {}).mai ? ' (mai)' : '')).join(' › ') : ''
+      o.usaPriorita ? 'Priorità (dal più importante): ' + scaletta().map(t => t.tipo + ((o.perTipo[t.id] || {}).mai ? ' (mai)' : '')).join(' › ') : '',
+      (o.protetti || []).length ? 'Incontri protetti (nessun esonero): ' + o.protetti.map(k => { const i = k.indexOf('|'); return k.slice(0, i).split('-').reverse().join('/') + ' ' + k.slice(i + 1); }).join('; ') : ''
     ].filter(Boolean);
     const intest = [[{ v: `Piano di esoneri dalle 40+40 – ${foglio.anno || ''}`, stile: 'titolo' }], [`Simulazione del ${new Date().toLocaleDateString('it-IT')}`]].concat(criteri.map(c => [c]), [[]]);
     const doc = intest.concat([['Docente', 'Dovute', 'A prima', 'A dopo', 'Soglia A', 'B prima', 'B dopo', 'Soglia B', 'Esoneri', 'Ore esonerate', 'Esito'].map(I)])
@@ -515,9 +541,19 @@ const Scheda40 = (() => {
         else if (az === 'apri') { const c = b.closest('tr').dataset.codice; aperti.has(c) ? aperti.delete(c) : aperti.add(c); disegna(); }
       });
       // il riquadro del piano resta aperto o chiuso quando la scheda si ridisegna («toggle» non risale: si ascolta in cattura)
-      box.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('q40-piano')) pianoAperto = e.target.open; }, true);
+      box.addEventListener('toggle', e => {
+        if (!e.target.classList) return;
+        if (e.target.classList.contains('q40-piano')) pianoAperto = e.target.open;
+        else if (e.target.classList.contains('q40-protetti')) protettiAperto = e.target.open;
+      }, true);
       // «Cerca» negli esoneri per impegno: nasconde le righe che non contengono il testo
       box.addEventListener('input', e => {
+        // «Cerca» negli incontri da proteggere (piano di esoneri)
+        if (e.target.matches('[data-q40="cercaProtetti"]')) {
+          const t = e.target.value.trim().toLowerCase();
+          box.querySelectorAll('.q40-protetti-elenco li').forEach(r => { r.hidden = !!t && !r.dataset.cerca.includes(t); });
+          return;
+        }
         if (!e.target.matches('[data-q40="cerca"]')) return;
         const t = e.target.value.trim().toLowerCase();
         box.querySelectorAll('.q40-esoneri tbody tr').forEach(r => { r.hidden = !!t && !r.dataset.cerca.includes(t); });
