@@ -75,3 +75,5 @@
 .q40-protetti-elenco li { padding: 3px 8px; border-bottom: 1px solid var(--line); }
 .q40-protetti-elenco li:last-child { border-bottom: 0; }
 .q40-togli-proposta { padding: 0 6px; line-height: 1.4; margin-left: 2px; }
+/* incontro già svolto a cui il docente era assente (scheda «Presenze»): non conta */
+.q40-assente td { text-decoration: line-through; font-style: italic; opacity: .75; }

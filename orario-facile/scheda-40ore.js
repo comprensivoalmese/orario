@@ -68,6 +68,9 @@ const Scheda40 = (() => {
       <a class="btn" href="${link}" target="_blank" rel="noopener">📄 Apri il Foglio «40 ore»</a>
       <button class="btn" data-q40="importa" ${risultato ? '' : 'disabled'}>📥 Importa proposte di esonero</button>
       <input type="file" id="q40File" accept=".xlsx,.ods" multiple hidden>
+      <button class="btn" data-q40="presenze" ${risultato ? '' : 'disabled'}>📥 Carica presenze</button>
+      <button class="btn" data-q40="modelloPresenze" ${risultato ? '' : 'disabled'}>📄 Modello presenze</button>
+      <input type="file" id="q40Presenze" accept=".xlsx,.ods,.csv" hidden>
       ${foglio ? `<label class="q40-tutti"><input type="checkbox" data-q40="tutti" ${foglio.visibileTutti ? 'checked' : ''}> Visibile a tutti i docenti (ognuno le proprie, nell'app)</label>` : ''}
     </div>`;
     if (stato) h += `<p class="hint" role="status">${esc(stato)}</p>`;
@@ -93,15 +96,16 @@ const Scheda40 = (() => {
         <td class="num q40-form"><input type="number" min="0" step="0.5" inputmode="decimal" data-q40="formazione" value="${d.oreFormazione || ''}" placeholder="0"
           aria-label="Ore di formazione obbligatoria di ${esc(nome(d))}" ${d.riga ? '' : 'disabled'}>${d.formazione !== (d.oreFormazione || 0) ? `<span class="q40-codice">in tutto ${ore(d.formazione)}</span>` : ''}</td>
         <td class="num">${ore(d.esonerate)}${d.proposte ? `<span class="q40-codice q40-attesa">+${ore(d.proposte)} da approvare</span>` : ''}</td>
+        <td class="num">${d.assenze ? ore(d.assenze) : ''}</td>
         ${td(d.residuoPrime, true)}${td(d.residuoSeconde, true)}${td(d.residuo, true)}
         <td class="q40-vis"><input type="checkbox" data-q40="visibile" aria-label="Visibile a ${esc(nome(d))}" ${d.visibile ? 'checked' : ''} ${d.riga ? '' : 'disabled'}></td></tr>`;
-      if (aperto) r += `<tr class="q40-dettaglio"><td colspan="12">${dettaglio(d)}</td></tr>`;
+      if (aperto) r += `<tr class="q40-dettaglio"><td colspan="13">${dettaglio(d)}</td></tr>`;
       return r;
     }).join('');
     return `<div class="q40-tabella-box"><table class="q40-tabella"><caption>Prospetto 40+40 per docente${foglio.anno ? ' – ' + esc(foglio.anno) : ''}
         <span class="hint">(tocca un nome per il dettaglio; in rosso le ore oltre il dovuto)</span></caption>
       <thead><tr><th scope="col">Docente</th><th scope="col">Tipo</th><th scope="col">Ore sett.</th><th scope="col">Dovute (per ciascuna)</th>
-        <th scope="col">Prime 40</th><th scope="col">Seconde 40</th><th scope="col">Formazione obbligatoria (ore)</th><th scope="col">Esonerate</th>
+        <th scope="col">Prime 40</th><th scope="col">Seconde 40</th><th scope="col">Formazione obbligatoria (ore)</th><th scope="col">Esonerate</th><th scope="col">Assenze (ore, non contano)</th>
         <th scope="col">Restano prime</th><th scope="col">Restano seconde</th><th scope="col">Restano in tutto</th><th scope="col">Visibile</th></tr></thead>
       <tbody>${righe}</tbody></table></div>`;
   }
@@ -111,7 +115,8 @@ const Scheda40 = (() => {
         <button class="btn" data-q40="excel" data-codice="${esc(d.codice)}">📥 Excel del docente (per gli esoneri)</button>
         ${d.dettaglio.some(x => x.proposto) ? `<button class="btn" data-q40="approvaTutte" data-codice="${esc(d.codice)}">✓ Approva tutte le proposte</button>` : ''}</p>
       <table class="q40-mini"><thead><tr><th scope="col">Giorno</th><th scope="col">Orario</th><th scope="col">Impegno</th><th scope="col">Ore</th><th scope="col">Conta in</th></tr></thead><tbody>` +
-      d.dettaglio.map(x => `<tr class="q40-${x.conta}${x.esonero ? ' q40-esonerato' : ''}${x.proposto ? ' q40-proposto' : ''}"><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${esc(x.impegno)}</td><td class="num">${ore(x.ore)}</td><td>${esc(CONTA[x.conta] || x.conta)}` +
+      d.dettaglio.map(x => `<tr class="q40-${x.conta}${x.esonero ? ' q40-esonerato' : ''}${x.proposto ? ' q40-proposto' : ''}${x.assente ? ' q40-assente' : ''}"><td>${esc(dataIt(x.data))}</td><td>${esc(x.orario)}</td><td>${esc(x.impegno)}</td><td class="num">${ore(x.ore)}</td><td>${esc(CONTA[x.conta] || x.conta)}` +
+        (x.assente ? ' · assente (presenze registrate: non conta)' : '') +
         (x.esonero ? ` · esonerato <button class="btn piccolo" data-q40="approva" data-valore="" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">↺ Togli approvazione</button> <button class="btn piccolo" data-q40="togli" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✕ Togli</button>` : '') +
         (x.proposto ? ` · esonero proposto <button class="btn piccolo" data-q40="approva" data-valore="SI" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✓ Approva</button> <button class="btn piccolo" data-q40="togli" data-codice="${esc(d.codice)}" data-chiave="${esc(x.data + '|' + x.impegno)}">✕ Togli</button>` : '') +
         '</td></tr>').join('') +
@@ -165,7 +170,9 @@ const Scheda40 = (() => {
      Criteri e regolazioni si ricordano sul dispositivo (orariofacile.pianoEsoneri); il piano si vede, si scarica in Excel
      e si salva nella scheda «Esoneri» del Foglio come proposte (da approvare) oppure già approvato. */
   const CHIAVE_PIANO = 'orariofacile.pianoEsoneri';
+  const oggiIso = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
   let piano = null, pianoAperto = false;
+  let pianoOggi = '';   // data della fotografia scelta a mano (vuota = oggi); non si ricorda, così domani è di nuovo oggi
   let pianoTolte = [];   // proposte tolte a mano: «codice#data|impegno» (valgono finché non si scarta il piano)
   let pref = Object.assign({}, typeof PianoEsoneri !== 'undefined' ? PianoEsoneri.OPZIONI_PROPOSTE : {}, { ordine: [], perTipo: {} });
   try { const p = JSON.parse(localStorage.getItem(CHIAVE_PIANO) || 'null'); if (p) pref = Object.assign(pref, p); } catch (e) { /* si parte dalle proposte */ }
@@ -190,7 +197,7 @@ const Scheda40 = (() => {
   }
   function simulaPiano() {
     scaletta();
-    piano = PianoEsoneri.simula(risultato, Object.assign({}, pref, { vietati: pianoTolte.slice() }), verificaEsatta);
+    piano = PianoEsoneri.simula(risultato, Object.assign({}, pref, { vietati: pianoTolte.slice(), oggi: pianoOggi || oggiIso() }), verificaEsatta);
     pianoAperto = true;
   }
 
@@ -211,6 +218,8 @@ const Scheda40 = (() => {
       <p class="hint">Propone a ogni docente con ore in più gli esoneri che servono per rientrare nella soglia, seguendo i criteri qui sotto.
       Prima di salvare puoi vedere il piano e scaricarlo in Excel; salvato, va nella scheda «Esoneri» del Foglio.</p>
       <div class="q40-criteri">
+        ${spunta('soloFuturi', `Fotografia a oggi: si esonera solo dagli incontri dopo il <input type="date" data-q40p="oggi" value="${esc(pianoOggi || oggiIso())}">;
+          quelli già svolti contano per come sono andati${risultato.registrati && risultato.registrati.size ? ` (presenze registrate per ${risultato.registrati.size} incontri: le assenze non contano)` : ' (carica le presenze per togliere le assenze)'}`)}
         ${spunta('usaRiserva', `Riserva sulle 40: lascia libero il ${num('riservaA', pref.riservaA)}% delle prime 40 (A) e il ${num('riservaB', pref.riservaB)}% delle seconde 40 (B), per i consigli straordinari`)}
         ${spunta('formazioneInB', 'La formazione obbligatoria si toglie dalla soglia delle seconde 40 (sta nelle ore che restano delle 80)')}
         ${spunta('usaPresenze', `Impegni non svuotati: al massimo il ${num('pct', pref.pct)}% di esonerati per impegno (orientativo, si può cambiare per tipo qui sotto) e almeno ${num('minimo', pref.minimo)} presenti`)}
@@ -298,7 +307,8 @@ const Scheda40 = (() => {
     } else if (c.startsWith('pct:') || c.startsWith('mai:')) {
       const id = c.slice(4), r = pref.perTipo[id] = pref.perTipo[id] || {};
       if (c.startsWith('pct:')) r.pct = el.value === '' ? null : Math.max(0, Math.min(100, Number(el.value) || 0)); else r.mai = el.checked;
-    } else if (el.type === 'checkbox') pref[c] = el.checked;
+    } else if (c === 'oggi') { pianoOggi = el.value; piano = null; disegna(); return; }   // la data della fotografia: solo finché la pagina è aperta
+    else if (el.type === 'checkbox') pref[c] = el.checked;
     else pref[c] = Math.max(0, Number(el.value) || 0);
     salvaPref(); piano = null; disegna();
   }
@@ -333,6 +343,7 @@ const Scheda40 = (() => {
   function excelPiano() {
     const I = t => ({ v: t, stile: 'intest' }), o = piano.opzioni;
     const criteri = [
+      o.soloFuturi ? `Fotografia al ${o.oggi.split('-').reverse().join('/')}: esoneri solo dagli incontri successivi (quelli svolti contano come sono andati)` : '',
       o.usaRiserva ? `Riserva: ${o.riservaA}% delle prime 40, ${o.riservaB}% delle seconde 40${o.formazioneInB ? ' (formazione tolta dalle seconde 40)' : ''}` : 'Nessuna riserva',
       o.usaPresenze ? `Al massimo ${o.pct}% di esonerati per impegno (orientativo), almeno ${o.minimo} presenti` : 'Nessun limite di esonerati per impegno',
       o.stessoGiorno ? 'Stesso giorno: la stessa persona per tutti gli impegni della giornata' : '',
@@ -475,6 +486,42 @@ const Scheda40 = (() => {
     if (typeof chiedi === 'function') chiedi(domanda, esegui, 'Importa'); else if (confirm(domanda)) esegui();
   }
 
+  /*
+    PRESENZE agli incontri già svolti: un Excel (verbali, registro firme, il modello qui sotto…) letto con
+    QuarantaOre.leggiPresenzeDaTabelle; dopo la conferma vanno nella scheda «Presenze» del Foglio (per gli incontri del file
+    sostituiscono quelle di prima), il conto si rifà (le assenze non contano) e si ripubblica.
+  */
+  async function caricaPresenze(file) {
+    let es;
+    try { es = QuarantaOre.leggiPresenzeDaTabelle(await Foglio.leggiTabelle(file), risultato); }
+    catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); return; }
+    let presenti = 0, assenti = 0;
+    es.voci.forEach(m => m.forEach(v => { if (v) presenti++; else assenti++; }));
+    if (!es.incontri.size) {
+      stato = `⚠️ Nel file non ho riconosciuto nessun incontro.${es.nonTrovati.size ? ' Docenti non riconosciuti: ' + [...es.nonTrovati].slice(0, 10).join(', ') + '.' : ''}` +
+        (es.giorniSenza.size ? ' Date senza incontri nel piano: ' + [...es.giorniSenza].slice(0, 10).map(d => d.split('-').reverse().join('/')).join(', ') + '.' : '');
+      disegna(); return;
+    }
+    const domanda = `Presenze lette (${es.forma}): ${es.incontri.size} incontri, ${presenti} presenze e ${assenti} assenze.` +
+      (es.nonTrovati.size ? ` Non riconosciuti (ignorati): ${[...es.nonTrovati].slice(0, 12).join(', ')}${es.nonTrovati.size > 12 ? '…' : ''}.` : '') +
+      (es.giorniSenza.size ? ` Date senza incontri nel piano: ${[...es.giorniSenza].slice(0, 8).map(d => d.split('-').reverse().join('/')).join(', ')}.` : '') +
+      ' Salvarle nella scheda «Presenze» del Foglio? Per questi incontri sostituiscono quelle di prima; le assenze non contano nelle 40+40.';
+    const esegui = async () => {
+      stato = 'Salvo le presenze nel Foglio…'; disegna();
+      try {
+        await QuarantaOre.scriviPresenze(foglio, risultato, es.voci, opz.email());
+        ricalcola(); piano = null;
+        await pubblica(`Presenze salvate: ${es.incontri.size} incontri, ${assenti} assenze.`);
+      } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
+    };
+    if (typeof chiedi === 'function') chiedi(domanda, esegui, 'Salva le presenze'); else if (confirm(domanda)) esegui();
+  }
+  // il modello da compilare: gli incontri fino a oggi con i docenti attesi (Presente già a SI)
+  function scaricaModelloPresenze() {
+    const fino = oggiIso();
+    scarica(Xlsx.crea(QuarantaOre.modelloPresenze(foglio, risultato, fino)), `Presenze 40+40 fino al ${fino.split('-').reverse().join('-')}.xlsx`);
+  }
+
   // ---------- estratto per una scuola di completamento (Excel) ----------
   function estratto(scuola) {
     const comuni = risultato.docenti.filter(d => d.scuola === scuola);
@@ -539,6 +586,8 @@ const Scheda40 = (() => {
           if (d) approva(d.codice, d.dettaglio.filter(x => x.proposto).map(x => x.data + '|' + x.impegno), true);
         }
         else if (az === 'importa') box.querySelector('#q40File').click();
+        else if (az === 'presenze') box.querySelector('#q40Presenze').click();
+        else if (az === 'modelloPresenze') scaricaModelloPresenze();
         // piano di esoneri
         else if (az === 'pianoSimula') { simulaPiano(); disegna(); }
         else if (az === 'pianoScarta') { piano = null; pianoTolte = []; disegna(); }
@@ -575,6 +624,7 @@ const Scheda40 = (() => {
       });
       box.addEventListener('change', e => {
         if (e.target.id === 'q40File') { const f = [...e.target.files]; e.target.value = ''; if (f.length) importaEsoneri(f); return; }
+        if (e.target.id === 'q40Presenze') { const f = e.target.files[0]; e.target.value = ''; if (f) caricaPresenze(f); return; }
         if (e.target.dataset.q40p) { cambioPiano(e.target); return; }
         const b = e.target.closest('input[data-q40]');
         if (!b) return;

@@ -16,6 +16,8 @@
     usaPriorita  – una scaletta dei tipi di impegno: in alto i più importanti (es. Collegio docenti), da cui si esonera solo se
                    proprio serve; per ogni tipo si può anche dire «mai»;
     vietati      – proposte tolte a mano dal piano («codice#data|impegno»): il docente non va esonerato da quell'incontro;
+    soloFuturi   – con «oggi» (la data della fotografia) si esonera solo dagli incontri successivi: quelli già svolti contano
+                   per come sono andati (presenze registrate: le assenze non contano già nelle ore del docente);
     richieste    – si preferiscono gli impegni da cui il docente ha chiesto l'esonero (le sue proposte nel Foglio).
 
   Come si calcola (spiegato semplice): a turno, ogni docente che ha ancora ore in più sceglie UN esonero (un impegno, oppure una
@@ -41,7 +43,7 @@ const PianoEsoneri = (() => {
     usaRiserva: true, riservaA: 5, riservaB: 5, formazioneInB: false,
     usaPresenze: true, pct: 30, minimo: 3,
     stessoGiorno: true, usaPriorita: true, richieste: true,
-    ordine: [], perTipo: {}, protetti: [], vietati: []
+    ordine: [], perTipo: {}, protetti: [], vietati: [], soloFuturi: true, oggi: ''
   };
 
   // I tipi di impegno che contano nelle 40+40, nell'ordine proposto: [{ id, tipo, conta, quanti }]
@@ -67,6 +69,8 @@ const PianoEsoneri = (() => {
     // proposte tolte a mano dal piano: «codice#data|impegno» (quel docente non va esonerato da quell'incontro)
     const proposteTolte = new Set(opz.vietati || []);
     const vietatoPer = (codice, k) => vietato(k) || proposteTolte.has(codice + '#' + k);
+    // gli incontri già svolti non si possono più esonerare: si esonera solo da quelli dopo «oggi» (la data della fotografia)
+    const passato = x => opz.soloFuturi && opz.oggi && x.data <= opz.oggi;
     // posizione nella scaletta: 0 = il più importante
     const ordine = opz.ordine && opz.ordine.length ? opz.ordine : tipi(risultato).map(t => t.id);
     const N = Math.max(1, ordine.length);
@@ -109,7 +113,7 @@ const PianoEsoneri = (() => {
       const b = bisogno.get(d.codice), mie = scelte.get(d.codice);
       const libere = d.dettaglio.filter(x => {
         const k = chiave(x);
-        return conta(x) && b[x.conta] > POCO && !x.esonero && !mie.has(k) && x.ore > 0 && !vietatoPer(d.codice, k) && (carico.get(k) || 0) < tetto(k);
+        return conta(x) && b[x.conta] > POCO && !x.esonero && !x.assente && !passato(x) && !mie.has(k) && x.ore > 0 && !vietatoPer(d.codice, k) && (carico.get(k) || 0) < tetto(k);
       });
       if (!libere.length) return false;
       const gruppi = new Map();
@@ -187,7 +191,7 @@ const PianoEsoneri = (() => {
         });
         // SCAMBI: un esonero lungo si cambia con uno più corto (non più importante) se basta lo stesso. Con «stesso giorno» non
         // si toccano le giornate con più esoneri, che restano libere per intero
-        const liberi = d.dettaglio.filter(y => { const k = chiave(y); return conta(y) && !y.esonero && !mie.has(k) && y.ore > 0 && !vietatoPer(d.codice, k) && (carico.get(k) || 0) < tetto(k); });
+        const liberi = d.dettaglio.filter(y => { const k = chiave(y); return conta(y) && !y.esonero && !y.assente && !passato(y) && !mie.has(k) && y.ore > 0 && !vietatoPer(d.codice, k) && (carico.get(k) || 0) < tetto(k); });
         [...mie.entries()].sort(([, xa], [, xb]) => xb.ore - xa.ore).forEach(([k, x]) => {
           if (opz.stessoGiorno && [...mie.values()].filter(z => z.data === x.data).length > 1) return;
           const migliore = liberi.filter(y => y.conta === x.conta && y.ore < x.ore && !mie.has(chiave(y)) && (carico.get(chiave(y)) || 0) < tetto(chiave(y)) &&

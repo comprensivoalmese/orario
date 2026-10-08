@@ -217,7 +217,16 @@ Le parti del progetto:
   volta, così i posti si dividono in modo equo), conto esatto con `calcola` (sovrapposizioni), rifinitura (toglie gli esoneri di
   troppo, scambia un impegno lungo con uno più corto non più importante) e nuovo giro con i posti liberati. Si vede per docente e per
   impegno (presenze), si scarica in Excel e si salva con `scriviEsoneriTutti` (una sola scrittura) come proposte o già approvato.
-  Prove locali: `.claude/test-piano-esoneri.html`, `.claude/test-scheda-piano.html`. Le ore di formazione obbligatoria di ogni docente si scrivono nel prospetto (colonna «Ore formazione» della scheda Docenti,
+  Prove locali: `.claude/test-piano-esoneri.html`, `.claude/test-scheda-piano.html`, `.claude/test-presenze.html`.
+  **Presenze agli incontri già svolti** (dal 08/10/2026): scheda «Presenze» del Foglio «40 ore» (Data, Impegno, Codice, Docente, Presente
+  SI/NO, Note; letta da `leggiFoglio` se c'è, `presenzeDaRighe`). Un'ASSENZA toglie le ore come un esonero ma resta a parte: `assente`
+  nel dettaglio, `assenze` (ore) per docente, colonna «Assenze» nel prospetto, codice 3 nel file pubblicato e «assente (non conta)» nell'app.
+  «📥 Carica presenze» (`leggiPresenzeDaTabelle`) capisce: una riga per docente e incontro (colonna Presente/Assente: SI/NO, P/A, AG, X…),
+  elenco dei soli assenti (colonna «Assenti») o dei soli presenti (modulo firme: chi manca è assente), griglia docenti × incontri (data nel
+  titolo della colonna); incontri riconosciuti da data + nome/tipo, docenti da codice o nome; per gli incontri del file `scriviPresenze`
+  sostituisce le righe di prima. «📄 Modello presenze» (`modelloPresenze`) = Excel con gli incontri fino a oggi e i docenti attesi
+  (Presente già a SI). Nel piano di esoneri la spunta «Fotografia a oggi» (`soloFuturi`, data `oggi` non ricordata) esonera solo dagli
+  incontri successivi; gli altri contano come sono andati. Le ore di formazione obbligatoria di ogni docente si scrivono nel prospetto (colonna «Ore formazione» della scheda Docenti,
   creata se manca) e si sommano alla formazione degli impegni. `app/js/xlsx.js` (spostato da orario-facile/) sa scrivere formule,
   colonne nascoste e menu a tendina; nell'app servono anche `../sostituzioni/js/docx.js` (lo ZIP) e `js/xlsx.js`.
   Le spunte «Visibile» si scrivono nel Foglio e si pubblicano subito: `quaranta-ore.json` nella `cartellaImpegni`, SOLO codici e solo

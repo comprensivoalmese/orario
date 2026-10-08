@@ -84,17 +84,22 @@ const QuarantaOre = (() => {
     const prendi = zone => fetch(SHEETS + encodeURIComponent(file()) + '/values:batchGet?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER&' +
       zone.map(z => 'ranges=' + encodeURIComponent(z)).join('&'), { cache: 'no-cache', headers: { Authorization: 'Bearer ' + t } });
     const base = ["'Impegni'!A1:L3000", "'Docenti'!A1:L400", "'Impostazioni'!A1:F60"];
-    let r = await prendi(base.concat(["'Esoneri'!A1:G3000"])), conEsoneri = true;
-    if (r.status === 400) { r = await prendi(base); conEsoneri = false; }
+    // le schede facoltative: «Esoneri» e «Presenze» (presenze agli incontri già svolti); si prova con tutte, poi con meno
+    const prove = [["'Esoneri'!A1:G3000", "'Presenze'!A1:F20000"], ["'Esoneri'!A1:G3000"], ["'Presenze'!A1:F20000"], []];
+    let r = null, scelta = [];
+    for (const p of prove) { r = await prendi(base.concat(p)); scelta = p; if (r.status !== 400) break; }
     if (r.status === 403 || r.status === 404) throw new Error('il tuo account non può aprire il Foglio «40 ore» (va condiviso con chi è autorizzato)');
     if (r.status === 400) throw new Error('nel Foglio «40 ore» mancano le schede «Impegni», «Docenti» o «Impostazioni»');
     if (!r.ok) throw new Error('errore ' + r.status + ' da Google');
-    const [imp, doc, set, eso] = ((await r.json()).valueRanges || []).map(v => v.values || []);
-    return Object.assign(interpreta(imp, doc, set, eso || []), { conEsoneri });
+    const valori = ((await r.json()).valueRanges || []).map(v => v.values || []);
+    const [imp, doc, set] = valori;
+    const conEsoneri = scelta.some(z => z.startsWith("'Esoneri'")), conPresenze = scelta.some(z => z.startsWith("'Presenze'"));
+    const eso = conEsoneri ? valori[3] : [], pre = conPresenze ? valori[conEsoneri ? 4 : 3] : [];
+    return Object.assign(interpreta(imp, doc, set, eso || [], pre || []), { conEsoneri, conPresenze });
   }
 
   // Dalle tabelle del Foglio ai dati: { impegni, docenti, categorie, visibileTutti, anno, colonnaVisibile, esoneri }
-  function interpreta(imp, doc, set, eso) {
+  function interpreta(imp, doc, set, eso, pre) {
     // Impostazioni: voce/valore (colonne A-B) e la tabella Tipo → Conta in (dove la si trova)
     const categorie = Object.assign({}, CATEGORIE);
     let visibileTutti = false, anno = '';
@@ -166,8 +171,29 @@ const QuarantaOre = (() => {
       if (!esoneri.has(codice)) esoneri.set(codice, new Map());
       esoneri.get(codice).set(dd + '|' + imp, { approvato: e.approvato >= 0 && si(r[e.approvato]), riga: i + 2 });
     });
+    const presenze = presenzeDaRighe(pre);
     return { impegni, docenti, categorie, visibileTutti, anno, colonnaVisibile: d.visibile, colonnaFormazione: d.formazione, colonneDocenti: di.length,
-      colonnaImpostazioni: (set || []).findIndex(r => semplice(r[0]).includes('visibile')), esoneri, righeEsoneri: (eso || []).slice(1), colonnaApprovato: e.approvato };
+      colonnaImpostazioni: (set || []).findIndex(r => semplice(r[0]).includes('visibile')), esoneri, righeEsoneri: (eso || []).slice(1), colonnaApprovato: e.approvato,
+      presenze, righePresenze: (pre || []).slice(1) };
+  }
+  /*
+    Scheda «Presenze» (incontri già svolti): Data, Impegno, Codice, Docente, Presente (SI/NO), Note – una riga per docente e incontro.
+    Restituisce Map codice → Map «data|impegno» → true (presente) / false (assente). Un incontro senza righe = presenze non registrate
+    (il docente conta come presente).
+  */
+  function presenzeDaRighe(pre) {
+    const presenze = new Map();
+    const pi = (pre || [])[0] || [];
+    const p = { codice: colonna(pi, t => t.startsWith('codice')), data: colonna(pi, t => t.startsWith('data')), impegno: colonna(pi, t => t.startsWith('impegno')),
+      presente: colonna(pi, t => t.startsWith('present')) };
+    if (p.codice >= 0 && p.data >= 0 && p.impegno >= 0 && p.presente >= 0) (pre || []).slice(1).forEach(r => {
+      const codice = String(r[p.codice] || '').trim().toUpperCase(), dd = data(r[p.data]), imp = String(r[p.impegno] || '').trim();
+      const v = String(r[p.presente] == null ? '' : r[p.presente]).trim();
+      if (!codice || !dd || !imp || !v) return;
+      if (!presenze.has(codice)) presenze.set(codice, new Map());
+      presenze.get(codice).set(dd + '|' + imp, si(v));
+    });
+    return presenze;
   }
   /*
     Scrutini ed esami con la colonna Classi vuota: le classi si ricavano dal titolo, così ogni docente risulta solo nei suoi
@@ -281,33 +307,38 @@ const QuarantaOre = (() => {
       const proposte = foglio.esoneri && foglio.esoneri.get(d.codice) || new Map();
       const esonerato = new Set([...proposte].filter(([, x]) => x.approvato).map(([k]) => k));
       const proposto = new Set([...proposte].filter(([, x]) => !x.approvato).map(([k]) => k));
+      // le ASSENZE registrate nella scheda «Presenze» (incontri già svolti): quelle ore non sono state fatte e non contano
+      const assente = new Set([...(foglio.presenze && foglio.presenze.get(d.codice) || new Map())].filter(([k, c]) => c === false && !esonerato.has(k)).map(([k]) => k));
       const tocca = b => (!d.dal || b.data >= d.dal) && (!b.classi.length || b.classi.some(c => mie.has(c)));
       const miei = bl.filter(b => b.conta !== 'altro' && tocca(b));
       const tot = { prime: 0, seconde: 0, formazione: 0, no: 0 };
-      // per giorno e conteggio: unione dei blocchi (senza gli impegni da cui il docente è esonerato)
+      // per giorno e conteggio: unione dei blocchi (senza gli impegni da cui il docente è esonerato o a cui era assente)
       const perGiorno = new Map();
-      miei.filter(b => !esonerato.has(b.chiave)).forEach(b => { const k = b.data + '|' + b.conta; if (!perGiorno.has(k)) perGiorno.set(k, []); perGiorno.get(k).push(b); });
+      miei.filter(b => !esonerato.has(b.chiave) && !assente.has(b.chiave)).forEach(b => { const k = b.data + '|' + b.conta; if (!perGiorno.has(k)) perGiorno.set(k, []); perGiorno.get(k).push(b); });
       perGiorno.forEach((g, k) => { tot[k.split('|')[1]] += durata(g); });
       // dettaglio per impegno (anche quelli esonerati, segnati)
       const perImpegno = new Map();
       miei.forEach(b => { if (!perImpegno.has(b.chiave)) perImpegno.set(b.chiave, []); perImpegno.get(b.chiave).push(b); });
       const dettaglio = [...perImpegno.values()].map(g => ({ data: g[0].data, orario: orarioDi(g), impegno: g[0].impegno, ore: arrotonda(durata(g)), conta: g[0].conta,
-        esonero: esonerato.has(g[0].chiave), proposto: proposto.has(g[0].chiave) }))
+        esonero: esonerato.has(g[0].chiave), proposto: proposto.has(g[0].chiave), assente: assente.has(g[0].chiave) }))
         .sort((a, b) => (a.data + a.orario).localeCompare(b.data + b.orario));
       const esonerate = arrotonda(dettaglio.filter(x => x.esonero && (x.conta === 'prime' || x.conta === 'seconde')).reduce((s, x) => s + x.ore, 0));
       const proposteOre = arrotonda(dettaglio.filter(x => x.proposto && (x.conta === 'prime' || x.conta === 'seconde')).reduce((s, x) => s + x.ore, 0));
+      const assenze = arrotonda(dettaglio.filter(x => x.assente && (x.conta === 'prime' || x.conta === 'seconde')).reduce((s, x) => s + x.ore, 0));
       // formazione: quella scritta negli impegni + le ore attribuite al docente nella scheda «Docenti»
       tot.formazione += d.oreFormazione || 0;
       const dov = dovute(d.tipo, d.oreSett);
       return Object.assign({}, d, {
         classi: [...mie].sort(), dovute: dov,
-        prime: arrotonda(tot.prime), seconde: arrotonda(tot.seconde), formazione: arrotonda(tot.formazione), nonConta: arrotonda(tot.no), esonerate, proposte: proposteOre,
+        prime: arrotonda(tot.prime), seconde: arrotonda(tot.seconde), formazione: arrotonda(tot.formazione), nonConta: arrotonda(tot.no), esonerate, proposte: proposteOre, assenze,
         residuoPrime: arrotonda(dov - tot.prime), residuoSeconde: arrotonda(dov - tot.seconde),
         residuo: arrotonda(2 * dov - tot.prime - tot.seconde - tot.formazione), dettaglio
       });
     }).sort((a, b) => (a.nome || a.codice).localeCompare(b.nome || b.codice, 'it'));
     const daApprovare = docenti.filter(d => d.dettaglio.some(x => x.proposto));
     if (daApprovare.length) avvisi.unshift(`Proposte di esonero da approvare: ${daApprovare.map(d => (d.nome || d.codice) + ' (' + d.dettaglio.filter(x => x.proposto).length + ')').join(', ')}. Apri il dettaglio del docente per approvarle.`);
+    // gli incontri con le presenze registrate (scheda «Presenze»)
+    const registrati = new Set(); (foglio.presenze || new Map()).forEach(m => m.forEach((v, k) => registrati.add(k)));
     // l'elenco degli impegni (una riga per giorno + impegno), per il piano degli estratti
     const perChiave = new Map();
     bl.forEach(b => { if (!perChiave.has(b.chiave)) perChiave.set(b.chiave, []); perChiave.get(b.chiave).push(b); });
@@ -316,9 +347,9 @@ const QuarantaOre = (() => {
       const righe = foglio.impegni.filter(x => x.data + '|' + x.impegno === chiave);
       const inizio = righe.map(x => x.ini).filter(x => x != null), fine = righe.map(x => x.fin).filter(x => x != null);
       return { chiave, data: g[0].data, orario: inizio.length ? hhmm(Math.min(...inizio)) + '–' + hhmm(Math.max(...fine)) : '', impegno: g[0].impegno,
-        conta: g[0].conta, classi: righe.map(x => x.classi).filter(Boolean).join(' / '), tipo: riga ? riga.tipo : '' };
+        conta: g[0].conta, classi: righe.map(x => x.classi).filter(Boolean).join(' / '), tipo: riga ? riga.tipo : '', registrato: registrati.has(chiave) };
     }).sort((a, b) => (a.data + a.orario).localeCompare(b.data + b.orario));
-    return { docenti, impegni, avvisi };
+    return { docenti, impegni, avvisi, registrati };
   }
 
   // ---------- 4. Scrivere nel Foglio la spunta di visibilità ----------
@@ -436,6 +467,136 @@ const QuarantaOre = (() => {
     return [...perChiave.values()].sort((a, b) => a.chiave.localeCompare(b.chiave));
   }
 
+  /* ---------- PRESENZE agli incontri già svolti (scheda «Presenze» del Foglio) ----------
+     Si caricano da un Excel (verbali, registro firme, modulo…) con leggiPresenzeDaTabelle, che capisce due forme:
+     - UNA RIGA PER PRESENZA: colonne Data, Docente (o Cognome e Nome, o Codice), facoltative Impegno e Presente/Assente.
+       Senza la colonna Presente: se la colonna del docente si chiama «Assenti» le righe sono le assenze, altrimenti sono le
+       presenze e chi era atteso a quell'incontro ma non c'è risulta assente;
+     - GRIGLIA: una riga per docente e una colonna per incontro (nel titolo la data, es. «Collegio 03/09/2026»), nelle celle
+       P / A / SI / NO / X / AG…
+     Gli incontri si riconoscono dalla data e, se c'è, dal nome (o dal tipo); i docenti dal codice o dal nome. */
+  const TITOLI_PRESENZE = ['Data', 'Impegno', 'Codice', 'Docente', 'Presente (SI/NO)', 'Note'];
+  const parole = s => semplice(s).split(/[^a-z0-9]+/).filter(Boolean);
+  function trovaDocente(testo, elenco) {
+    const t = String(testo || '').trim();
+    if (/^DOC\d+$/i.test(t)) return elenco.find(d => d.codice === t.toUpperCase()) || null;
+    const a = new Set(parole(t)); if (!a.size) return null;
+    const uguali = elenco.filter(d => { const b = new Set(parole(d.nome)); return b.size === a.size && [...a].every(x => b.has(x)); });
+    if (uguali.length === 1) return uguali[0];
+    const dentro = elenco.filter(d => { const b = new Set(parole(d.nome)); return b.size && ([...a].every(x => b.has(x)) || [...b].every(x => a.has(x))); });
+    return dentro.length === 1 ? dentro[0] : null;
+  }
+  // una cella → true (presente) / false (assente) / null (vuota o non capita); «assenti» = la colonna conta le assenze
+  function presenza(v, assenti) {
+    const t = semplice(v);
+    let p = null;
+    if (/^(si|s|x|p|pres|presente|1|true|vero|ok|firma|firmato|✓|✔)\b/.test(t) || t === 'x') p = true;
+    else if (/^(no|n|a|ag|ai|ass|assente|giust|ingiust|0|false|falso)\b/.test(t)) p = false;
+    if (p === null) return null;
+    return assenti ? !p : p;
+  }
+  function leggiPresenzeDaTabelle(tabelle, risultato) {
+    const elenco = risultato.docenti.map(d => ({ codice: d.codice, nome: d.nome || '' }));
+    // chi è atteso a ogni incontro (dal dettaglio di ogni docente)
+    const attesi = new Map();
+    risultato.docenti.forEach(d => d.dettaglio.forEach(x => {
+      if (!['prime', 'seconde', 'formazione'].includes(x.conta)) return;
+      const k = x.data + '|' + x.impegno; if (!attesi.has(k)) attesi.set(k, new Set()); attesi.get(k).add(d.codice);
+    }));
+    const esito = { voci: new Map(), incontri: new Set(), nonTrovati: new Set(), giorniSenza: new Set(), nonAttesi: 0, righe: 0, forma: '' };
+    const segna = (codice, k, presente) => { if (!esito.voci.has(k)) esito.voci.set(k, new Map()); esito.voci.get(k).set(codice, presente); esito.incontri.add(k); };
+    // gli incontri di un giorno che corrispondono al testo (nome o tipo); se il testo non dice niente, tutti quelli del giorno
+    const incontri = (dd, testo) => {
+      const tutti = risultato.impegni.filter(p => p.data === dd && attesi.has(p.chiave));
+      if (!tutti.length) { esito.giorniSenza.add(dd); return []; }
+      const t = semplice(String(testo || '').replace(/\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}/, ''));
+      if (!t) return tutti;
+      const scelti = tutti.filter(p => { const a = semplice(p.impegno), b = semplice(p.tipo); return a === t || a.includes(t) || t.includes(a) || (b && (t.includes(b) || b.includes(t))); });
+      return scelti.length ? scelti : tutti;
+    };
+    const metti = (testoDocente, dd, testoImpegno, presente) => {
+      if (presente === null || !dd) return;
+      const d = trovaDocente(testoDocente, elenco);
+      if (!d) { if (String(testoDocente || '').trim()) esito.nonTrovati.add(String(testoDocente).trim()); return; }
+      esito.righe++;
+      incontri(dd, testoImpegno).forEach(p => { if (attesi.get(p.chiave).has(d.codice)) segna(d.codice, p.chiave, presente); else esito.nonAttesi++; });
+    };
+    for (const tab of tabelle || []) {
+      const righe = tab.righe || [];
+      for (let i = 0; i < Math.min(15, righe.length); i++) {
+        const h = righe[i].map(semplice);
+        const cData = h.findIndex(c => /^(data|giorno)/.test(c));
+        const cCogn = h.findIndex(c => c.startsWith('cognome')), cNome = h.findIndex(c => c === 'nome');
+        const cDoc = h.findIndex(c => /docent|nominativ|assent|presenti$/.test(c)), cCod = h.findIndex(c => c.startsWith('codice'));
+        const nomeDi = r => cCod >= 0 && /^DOC\d+/i.test(String(r[cCod] || '').trim()) ? String(r[cCod]).trim()
+          : cCogn >= 0 ? String(r[cCogn] || '') + (cNome >= 0 && cNome !== cCogn ? ' ' + String(r[cNome] || '') : '') : String(r[cDoc >= 0 ? cDoc : cNome] || '');
+        const haDocente = cCogn >= 0 || cDoc >= 0 || cCod >= 0 || cNome >= 0;
+        // 1) UNA RIGA PER PRESENZA
+        if (cData >= 0 && haDocente) {
+          const cImp = h.findIndex(c => /impegno|riunione|incontro|organo|oggetto|^tipo/.test(c));
+          const cPres = h.findIndex((c, j) => j !== cDoc && /present|presenz|assen|esito|stato|firma/.test(c));
+          const assenti = cPres >= 0 ? /assen/.test(h[cPres]) : cDoc >= 0 && /assent/.test(h[cDoc]);
+          esito.forma = cPres >= 0 ? 'una riga per docente e incontro' : assenti ? 'elenco degli assenti' : 'elenco dei presenti';
+          const corpo = righe.slice(i + 1);
+          if (cPres >= 0) corpo.forEach(r => metti(nomeDi(r), data(r[cData]), cImp >= 0 ? r[cImp] : '', presenza(r[cPres], assenti)));
+          else {
+            // solo un elenco (dei presenti o degli assenti): per gli incontri citati, chi era atteso e non c'è ha l'opposto
+            corpo.forEach(r => metti(nomeDi(r), data(r[cData]), cImp >= 0 ? r[cImp] : '', !assenti));
+            esito.incontri.forEach(k => attesi.get(k).forEach(c => { if (!esito.voci.get(k).has(c)) esito.voci.get(k).set(c, assenti); }));
+          }
+          return esito;
+        }
+        // 2) GRIGLIA: almeno due colonne con una data nel titolo
+        const conData = righe[i].map((c, j) => ({ j, dd: data(c), testo: c })).filter(x => x.dd);
+        if (conData.length >= 2) {
+          esito.forma = 'griglia (docenti × incontri)';
+          const cD = haDocente ? (cCogn >= 0 ? cCogn : cDoc >= 0 ? cDoc : cCod >= 0 ? cCod : cNome) : righe[i].findIndex((c, j) => !conData.some(x => x.j === j));
+          righe.slice(i + 1).forEach(r => {
+            const chi = haDocente ? nomeDi(r) : String(r[cD] || '');
+            conData.forEach(x => metti(chi, x.dd, x.testo, presenza(r[x.j], false)));
+          });
+          return esito;
+        }
+      }
+    }
+    throw new Error('non trovo le presenze nel file: servono le colonne Data e Docente (o Cognome e Nome), oppure una griglia con le date nei titoli delle colonne');
+  }
+  // Scrive le presenze nella scheda «Presenze»: per gli incontri caricati sostituisce le righe di prima, le altre restano
+  async function scriviPresenze(foglio, risultato, voci, email) {
+    if (!foglio.conPresenze) {
+      await chiamaFoglio(':batchUpdate', 'POST', { requests: [{ addSheet: { properties: { title: 'Presenze' } } }] }, email);
+      foglio.conPresenze = true; foglio.righePresenze = [];
+    }
+    const nomeDi = c => (risultato.docenti.find(d => d.codice === c) || {}).nome || '';
+    const altre = (foglio.righePresenze || []).filter(r => !voci.has(data(r[0]) + '|' + String(r[1] || '').trim()) && r.some(c => c !== '' && c != null))
+      .map(r => [dataIt(r[0]), r[1], r[2], r[3], r[4], r[5] == null ? '' : r[5]]);
+    const nuove = [];
+    [...voci.keys()].sort().forEach(k => { const i = k.indexOf('|'); voci.get(k).forEach((presente, c) => nuove.push([k.slice(0, i).split('-').reverse().join('/'), k.slice(i + 1), c, nomeDi(c), presente ? 'SI' : 'NO', ''])); });
+    const valori = [TITOLI_PRESENZE].concat(altre, nuove);
+    await chiamaFoglio('/values/' + encodeURIComponent("'Presenze'!A:F") + ':clear', 'POST', {}, email);
+    await chiamaFoglio('/values/' + encodeURIComponent(`'Presenze'!A1:F${valori.length}`) + '?valueInputOption=USER_ENTERED', 'PUT', { values: valori }, email);
+    foglio.righePresenze = altre.concat(nuove);
+    foglio.presenze = presenzeDaRighe(valori);
+  }
+  /*
+    Il MODELLO da compilare: tutti gli incontri fino a «fino» (compreso) con i docenti attesi, una riga ciascuno, e la colonna
+    Presente già a SI (o com'era registrata): basta mettere NO agli assenti e ricaricarlo.
+  */
+  function modelloPresenze(foglio, risultato, fino) {
+    const I = t => ({ v: t, stile: 'intest' });
+    const righe = [[{ v: `Presenze agli incontri – ${foglio.anno || ''}`, stile: 'titolo' }],
+      [{ v: 'Scrivi NO nella colonna «Presente» per chi era assente, poi carica il file in Orario Facile (40+40 → «Carica presenze»). Non cambiare le altre colonne.', stile: 'evid' }], [],
+      ['Data', 'Orario', 'Impegno', 'Codice', 'Docente', 'Presente (SI/NO)'].map(I)];
+    const da = righe.length + 1;
+    risultato.impegni.filter(p => p.data <= fino && ['prime', 'seconde', 'formazione'].includes(p.conta)).forEach(p => {
+      risultato.docenti.filter(d => d.dettaglio.some(x => x.data + '|' + x.impegno === p.chiave)).forEach(d => {
+        const reg = foglio.presenze && foglio.presenze.get(d.codice) && foglio.presenze.get(d.codice).get(p.chiave);
+        righe.push([p.data.split('-').reverse().join('/'), p.orario, p.impegno, d.codice, d.nome || '', { v: reg === false ? 'NO' : 'SI', stile: 'evid' }]);
+      });
+    });
+    return [{ nome: 'Presenze', larghezze: [12, 12, 40, 9, 28, 16], blocca: 4, righe, elenchi: righe.length >= da ? [{ zona: `F${da}:F${righe.length}`, valori: ['SI', 'NO'] }] : [] }];
+  }
+
   /*
     L'EXCEL DEL DOCENTE («Le mie 40+40» nell'app, o dal prospetto): le sue ore divise in A (prime 40) e B (seconde 40),
     con la colonna «Esonero» dove scrive SI per gli impegni da cui chiede l'esonero; i totali si ricalcolano da soli.
@@ -506,7 +667,9 @@ const QuarantaOre = (() => {
     risultato.docenti.filter(d => foglio.visibileTutti || d.visibile).forEach(d => {
       docenti[d.codice] = {
         tipo: d.tipo, oreSett: d.oreSett, dovute: d.dovute, prime: d.prime, seconde: d.seconde, formazione: d.formazione,
-        dal: d.dal || '', esonerate: d.esonerate || 0, proposte: d.proposte || 0, dettaglio: d.dettaglio.map(x => [x.data, x.orario, x.impegno, x.ore, x.conta, x.esonero ? 1 : x.proposto ? 2 : 0])
+        dal: d.dal || '', esonerate: d.esonerate || 0, proposte: d.proposte || 0, assenze: d.assenze || 0,
+        // ultimo numero: 1 = esonerato, 2 = esonero proposto, 3 = assente (presenze registrate), 0 = niente
+        dettaglio: d.dettaglio.map(x => [x.data, x.orario, x.impegno, x.ore, x.conta, x.esonero ? 1 : x.proposto ? 2 : x.assente ? 3 : 0])
       };
     });
     return { tipo: 'quaranta-ore', anno: foglio.anno, aggiornato: new Date().toISOString(), docenti };
@@ -548,12 +711,13 @@ const QuarantaOre = (() => {
     const riga = (titolo, dov, fatte) => `<tr><th scope="row">${titolo}</th><td>${ore(dov)}</td><td>${ore(fatte)}</td><td class="${dov - fatte < 0 ? 'q40-oltre' : ''}">${ore(dov - fatte)}</td></tr>`;
     const oggi = new Date().toISOString().slice(0, 10);
     const dett = d.dettaglio.map(([data, orario, imp, h, conta, eso]) =>
-      `<tr class="${data < oggi ? 'q40-passato' : ''}${eso === 1 ? ' q40-esonero' : ''}"><td>${esc(giorno(data))}</td><td>${esc(orario)}</td><td>${esc(imp)}</td><td>${ore(h)}</td><td>${esc(NOMI_CONTA[conta] || conta)}${eso === 1 ? ' · esonerato' : eso === 2 ? ' · esonero proposto, in attesa di approvazione' : ''}</td></tr>`).join('');
+      `<tr class="${data < oggi ? 'q40-passato' : ''}${eso === 1 ? ' q40-esonero' : eso === 3 ? ' q40-assente' : ''}"><td>${esc(giorno(data))}</td><td>${esc(orario)}</td><td>${esc(imp)}</td><td>${ore(h)}</td><td>${esc(NOMI_CONTA[conta] || conta)}${eso === 1 ? ' · esonerato' : eso === 2 ? ' · esonero proposto, in attesa di approvazione' : eso === 3 ? ' · assente (non conta)' : ''}</td></tr>`).join('');
     return `<table class="q40-riepilogo"><caption>Le tue ore${d.tipo !== 'COI' ? ` (${esc(d.tipo)}, ${ore(d.oreSett)} ore settimanali: dovute in proporzione)` : ''}</caption>
       <thead><tr><th scope="col"></th><th scope="col">Dovute</th><th scope="col">Programmate</th><th scope="col">Restano</th></tr></thead>
       <tbody>${riga('Prime 40 (collegio, programmazione, famiglie)', d.dovute, d.prime)}${riga('Seconde 40 (consigli di classe, GLO)', d.dovute, d.seconde)}</tbody></table>
       ${d.formazione ? `<p>Formazione obbligatoria: <strong>${ore(d.formazione)}</strong> ore (contano nelle ore che restano delle 80).</p>` : ''}
       ${d.esonerate ? `<p>Esonerato da impegni per <strong>${ore(d.esonerate)}</strong> ore (già tolte dalle programmate).</p>` : ''}
+      ${d.assenze ? `<p>Assenze registrate agli incontri già svolti: <strong>${ore(d.assenze)}</strong> ore (non contano nelle programmate).</p>` : ''}
       ${d.proposte ? `<p>Esoneri proposti in attesa di approvazione: <strong>${ore(d.proposte)}</strong> ore (per ora contano ancora).</p>` : ''}
       <p><button type="button" class="pulsante" data-q40-excel>📥 Scarica il mio Excel</button>
         <span class="q40-nota">Le tue ore divise in A e B: scrivi SI nella colonna «Esonero» per gli impegni da cui chiedi l'esonero e rimanda il file a chi gestisce l'orario.</span></p>
@@ -566,8 +730,8 @@ const QuarantaOre = (() => {
 
   // Una voce pubblicata (dettaglio come array) nella forma usata da excelDocente
   const daPubblicato = (d, codice, nome) => Object.assign({}, d, { codice, nome,
-    dettaglio: d.dettaglio.map(([data, orario, impegno, ore, conta, esonero]) => ({ data, orario, impegno, ore, conta, esonero: esonero === 1, proposto: esonero === 2 })) });
+    dettaglio: d.dettaglio.map(([data, orario, impegno, ore, conta, esonero]) => ({ data, orario, impegno, ore, conta, esonero: esonero === 1, proposto: esonero === 2, assente: esonero === 3 })) });
 
   return { configurato, leggiFoglio, interpreta, classiDaOrario, calcola, scriviVisibile, scriviVisibileTutti, scriviFormazione, scriviEsoneri, scriviEsoneriTutti, scriviApprovato, togliEsoneri, esoneriPerImpegno,
-    excelDocente, leggiEsoneriDaExcel, daPubblicato, pubblica, datiDaPubblicare, leggiPubblicato, htmlDocente, NOMI_CONTA, dovute, file };
+    leggiPresenzeDaTabelle, scriviPresenze, modelloPresenze, excelDocente, leggiEsoneriDaExcel, daPubblicato, pubblica, datiDaPubblicare, leggiPubblicato, htmlDocente, NOMI_CONTA, dovute, file };
 })();

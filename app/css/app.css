@@ -226,6 +226,8 @@ select {
 .q40-passato td { color: var(--testo-tenue); }
 .q40-oltre { color: var(--errore); font-weight: 700; }
 .q40-esonero td { text-decoration: line-through; color: var(--testo-tenue); }
+/* incontro già svolto a cui il docente era assente (presenze registrate): non conta */
+.q40-assente td { text-decoration: line-through; color: var(--testo-tenue); font-style: italic; }
 .finestra-40ore [data-q40-excel] { width: auto; margin: 4px 8px 4px 0; }
 .q40-nota { font-size: .85rem; color: var(--testo-tenue); }
 body.modalita-monitor .qr-app { width: min(420px, 60vh); }
