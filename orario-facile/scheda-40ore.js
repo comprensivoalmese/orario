@@ -87,6 +87,7 @@ const Scheda40 = (() => {
       h += pianoHtml();
       h += esoneri();
       h += scuole();
+      h += sovrapposizioniHtml();
     }
     box.innerHTML = h;
   }
@@ -280,6 +281,105 @@ const Scheda40 = (() => {
       } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
     };
     if (typeof chiedi === 'function') chiedi(domanda, esegui, 'Salva'); else if (confirm(domanda)) esegui();
+  }
+
+  /* ---------- SOVRAPPOSIZIONI CON LE ALTRE SCUOLE: come risolverle (calcoli in sovrapposizioni.js) ----------
+     «Cerca soluzioni» prova per ogni sovrapposizione: riordino dei consigli, esonero (anche scambiato con un altro), un altro orario
+     o un altro giorno. ✕ scarta una proposta e si cerca un'altra strada. Gli esoneri si salvano nel Foglio (approvati); le modifiche
+     al piano degli impegni NON si scrivono: si scaricano in Excel («piano aggiornato») da controllare e copiare nella scheda «Impegni». */
+  let sovr = null, sovrVietate = [];
+  function cercaSoluzioni() {
+    sovr = Sovrapposizioni.analizza({ foglio, risultato, classi: classiCorrenti, calcola: QuarantaOre.calcola,
+      pref: Object.assign({}, pref, { protetti: pref.protetti || [] }), oggi: oggiIso(), vietate: sovrVietate });
+    sezioniAperte.add('sovrapposizioni');
+  }
+  function sovrapposizioniHtml() {
+    if (typeof Sovrapposizioni === 'undefined') return '';
+    const tutte = [].concat(...risultato.docenti.map(d => (d.conflitti || []).map(c => ({ d, c }))));
+    if (!tutte.length) return '';
+    const vere = tutte.filter(x => x.c.tipo !== 'senzaOrario').length;
+    const riga = (x, soluzione, extra) => `<tr${extra || ''}><th scope="row">${esc(nomeDi(x.codice))}</th><td>${esc(dataIt(x.conflitto.data))}</td>
+      <td>${esc(x.conflitto.nostro)} <span class="q40-codice">${esc(x.conflitto.nostroOrario || 'senza orario')}</span></td>
+      <td>${esc(x.conflitto.loro)} <span class="q40-codice">${esc(x.conflitto.scuola || '')} ${esc(x.conflitto.loroOrario || 'senza orario')}</span></td>
+      <td>${esc(problema(x.conflitto))}</td><td>${soluzione}</td></tr>`;
+    const testa = ultima => `<thead><tr><th scope="col">Docente</th><th scope="col">Giorno</th><th scope="col">Da noi</th><th scope="col">Altra scuola</th><th scope="col">Problema</th><th scope="col">${ultima}</th></tr></thead>`;
+    let h = `<p class="hint">Per ogni sovrapposizione si prova, in quest'ordine: <b>riordinare</b> la sequenza dei consigli (il docente c'è e nessuno perde ore),
+      <b>esonerare</b> il docente dal nostro impegno secondo i criteri del Piano di esoneri (se senza quelle ore scenderebbe sotto le dovute, lo si
+      scambia con un altro suo esonero), <b>spostare l'orario</b> nello stesso giorno o <b>spostare il giorno</b>. Con ✕ scarti una proposta e se ne cerca un'altra.</p>
+      <div class="q40-barra"><button class="btn pubblica" data-q40="sovrCerca">▶ Cerca soluzioni</button>
+      ${sovr ? '<button class="btn" data-q40="sovrScarta">Scarta le proposte</button>' : ''}</div>`;
+    if (sovr) {
+      const etichetta = { riordino: '🔀 Riordino', esonero: '🙋 Esonero', orario: '🕒 Orario', giorno: '📅 Giorno' };
+      const prop = sovr.proposte.map(p => riga(p, `<b>${etichetta[p.tipo]}</b>: ${esc(p.testo)}
+        <button class="btn piccolo" data-q40="sovrTogli" data-id="${esc(p.id)}" title="Scarta questa proposta e cercane un'altra" aria-label="Scarta la proposta">✕</button>`)).join('');
+      const no = sovr.nonRisolte.map(x => riga(x, esc(x.motivo), ' class="q40-inc-sovrapposizione"')).join('');
+      const altre = sovr.passate.map(x => riga(x, 'già svolto: se non è venuto, «Carica presenze (altra scuola)» nel Piano di esoneri', ' class="q40-inc-senzaOrario"'))
+        .concat(sovr.daVerificare.map(x => riga(x, 'manca l\'orario: chiedilo e correggi il file', ' class="q40-inc-senzaOrario"'))).join('');
+      const tolte = sovrVietate.length ? `<p class="hint">Proposte scartate da te: ${sovrVietate.length} <button class="btn piccolo" data-q40="sovrAzzera">Azzera</button></p>` : '';
+      const esoneri = sovr.proposte.filter(p => p.tipo === 'esonero').length, modifiche = sovr.proposte.filter(p => p.tipo !== 'esonero').length;
+      h += `${tolte}<div class="q40-sintesi"><span class="tag${sovr.nonRisolte.length ? '' : ' ok'}">${sovr.proposte.length} risolte di ${sovr.proposte.length + sovr.nonRisolte.length}</span>
+          <span class="tag">${esoneri} esoneri · ${modifiche} modifiche al piano</span>${sovr.nonRisolte.length ? `<span class="tag q40-oltre">${sovr.nonRisolte.length} non risolvibili</span>` : ''}</div>
+        ${prop ? `<div class="q40-tabella-box"><table class="q40-mini"><caption>Soluzioni proposte</caption>${testa('Soluzione')}<tbody>${prop}</tbody></table></div>` : ''}
+        ${no ? `<div class="q40-tabella-box"><table class="q40-mini"><caption>⚠ Sovrapposizioni non risolvibili (da concordare con l'altra scuola)</caption>${testa('Perché')}<tbody>${no}</tbody></table></div>` : ''}
+        ${altre ? `<details class="q40-avvisi"><summary>Già svolte o senza orario (${sovr.passate.length + sovr.daVerificare.length})</summary><div class="q40-tabella-box"><table class="q40-mini">${testa('Cosa fare')}<tbody>${altre}</tbody></table></div></details>` : ''}
+        <div class="q40-barra">
+          <button class="btn" data-q40="sovrEsoneri"${esoneri ? '' : ' disabled'}>✓ Salva gli esoneri proposti (approvati)</button>
+          <button class="btn pubblica" data-q40="sovrExcel">📥 Scarica il piano degli impegni aggiornato (Excel)</button></div>
+        <p class="hint">Le modifiche al piano (riordini, orari, giorni) non si scrivono nel Foglio: nell'Excel le righe cambiate sono in giallo, da controllare,
+          comunicare e poi copiare nella scheda «Impegni». Gli esoneri invece si salvano qui.</p>`;
+    }
+    return sezione('sovrapposizioni', '🔧 Sovrapposizioni con le altre scuole', `(${vere} da risolvere${tutte.length > vere ? `, ${tutte.length - vere} senza orario` : ''})`, h);
+  }
+  // salva nella scheda «Esoneri» gli esoneri proposti (approvati); quelli scambiati si tolgono, gli altri del docente restano
+  function salvaEsoneriSovr() {
+    const per = new Map();
+    sovr.proposte.filter(p => p.tipo === 'esonero').forEach(p => { if (!per.has(p.codice)) per.set(p.codice, []); per.get(p.codice).push(p); });
+    const elenco = [...per.entries()].map(([codice, lista]) => {
+      const dd = risultato.docenti.find(x => x.codice === codice) || { dettaglio: [] };
+      const oreDi = k => { const x = dd.dettaglio.find(y => y.data + '|' + y.impegno === k); return x ? x.ore : 0; };
+      const via = new Set(lista.filter(p => p.scambio).map(p => p.scambio.chiave));
+      const voci = [...((foglio.esoneri || new Map()).get(codice) || new Map()).keys()].filter(k => !via.has(k))
+        .map(k => { const i = k.indexOf('|'); return { data: k.slice(0, i), impegno: k.slice(i + 1), ore: oreDi(k) }; });
+      lista.forEach(p => { const i = p.chiave.indexOf('|'); voci.push({ data: p.chiave.slice(0, i), impegno: p.chiave.slice(i + 1), ore: p.ore, approvato: true }); });
+      return { codice, nome: nomeDi(codice), voci };
+    });
+    const n = sovr.proposte.filter(p => p.tipo === 'esonero').length;
+    const domanda = `Salvare ${n} esoneri APPROVATI per ${elenco.length} docenti nella scheda «Esoneri» del Foglio? Gli esoneri scambiati si tolgono.`;
+    const esegui = async () => {
+      stato = 'Salvo gli esoneri nel Foglio…'; disegna();
+      try {
+        await QuarantaOre.scriviEsoneriTutti(foglio, elenco, opz.email());
+        ricalcola(); cercaSoluzioni();
+        await pubblica(`Esoneri per le sovrapposizioni salvati: ${n}.`);
+      } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
+    };
+    if (typeof chiedi === 'function') chiedi(domanda, esegui, 'Salva gli esoneri'); else if (confirm(domanda)) esegui();
+  }
+  // il piano degli impegni con le modifiche proposte (stesse colonne della scheda «Impegni»), più l'elenco delle modifiche
+  function excelSovr() {
+    const I = t => ({ v: t, stile: 'intest' }), hh = m => m == null ? '' : Sovrapposizioni.hhmm(m);
+    const prima = new Map(foglio.impegni.map(x => [x.riga, x]));
+    const cosa = new Map();
+    sovr.proposte.filter(p => p.tipo !== 'esonero').forEach(p => (p.righe || [p.riga]).forEach(n => cosa.set(n, (cosa.has(n) ? cosa.get(n) + '; ' : '') + p.testo)));
+    const righe = [[{ v: `Piano degli impegni ${foglio.anno || ''} – proposta con le modifiche per le sovrapposizioni`, stile: 'titolo' }],
+      [`Proposta del ${new Date().toLocaleDateString('it-IT')}: le righe in giallo sono cambiate (colonna «Modifica proposta»). Da verificare prima di copiarla nella scheda «Impegni».`], [],
+      ['Data', 'Inizio', 'Fine', 'Impegno', 'Tipo', 'Classi', 'Ore', 'Note', 'Modifica proposta'].map(I)]
+      .concat(sovr.impegni.slice().sort((a, b) => (a.data + hh(a.ini)).localeCompare(b.data + hh(b.ini))).map(x => {
+        const p = prima.get(x.riga) || {}, cambiata = p.data !== x.data || p.ini !== x.ini || p.fin !== x.fin || p.classi !== x.classi;
+        const st = cambiata ? 'evid' : '';
+        return [x.data.split('-').reverse().join('/'), hh(x.ini), hh(x.fin), x.impegno, x.tipo, x.classi, x.ore == null ? '' : x.ore, x.note || '', cambiata ? cosa.get(x.riga) || 'modificata' : '']
+          .map(v => ({ v, stile: st }));
+      }));
+    const col = x => [nomeDi(x.codice), dataIt(x.conflitto.data), x.conflitto.nostro + ' ' + (x.conflitto.nostroOrario || ''), (x.conflitto.scuola || '') + ': ' + x.conflitto.loro + ' ' + (x.conflitto.loroOrario || ''), problema(x.conflitto)];
+    const mod = [[{ v: 'Sovrapposizioni con le scuole di completamento', stile: 'titolo' }], [],
+      ['Docente', 'Giorno', 'Da noi', 'Altra scuola', 'Problema', 'Soluzione proposta'].map(I)]
+      .concat(sovr.proposte.map(p => col(p).concat(p.testo)))
+      .concat(sovr.nonRisolte.map(x => col(x).concat({ v: 'NON RISOLVIBILE: ' + x.motivo, stile: 'evid' })))
+      .concat(sovr.passate.map(x => col(x).concat('già svolto')))
+      .concat(sovr.daVerificare.map(x => col(x).concat('manca l\'orario: da verificare')));
+    scarica(Xlsx.crea([{ nome: 'Impegni (proposta)', larghezze: [12, 8, 8, 40, 20, 26, 6, 20, 60], blocca: 4, righe },
+      { nome: 'Sovrapposizioni', larghezze: [24, 18, 34, 40, 24, 70], blocca: 3, righe: mod }]),
+      `Piano impegni - proposta ${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
   /* ---------- PIANO DI ESONERI (simulazione, calcoli in piano-esoneri.js) ----------
@@ -533,7 +633,7 @@ const Scheda40 = (() => {
       await pubblica('Salvato nel Foglio.');
     } catch (e) { stato = '⚠️ ' + (e.message || e); disegna(); }
   }
-  function ricalcola() { risultato = QuarantaOre.calcola(foglio, classiCorrenti); }
+  function ricalcola() { risultato = QuarantaOre.calcola(foglio, classiCorrenti); sovr = null; }   // le proposte per le sovrapposizioni vanno rifatte
 
   // Togliere del tutto un esonero (o una proposta) dal Foglio
   async function togli(codice, chiave) {
@@ -747,6 +847,13 @@ const Scheda40 = (() => {
         else if (az === 'stampa') window.print();
         else if (az === 'estratto') estratto(b.dataset.scuola);
         else if (az === 'excelVerifica') excelVerifica(b.dataset.scuola);
+        // sovrapposizioni con le altre scuole: cerca, scarta una proposta (e cercane un'altra), salva, scarica
+        else if (az === 'sovrCerca') { cercaSoluzioni(); disegna(); }
+        else if (az === 'sovrScarta') { sovr = null; sovrVietate = []; disegna(); }
+        else if (az === 'sovrTogli') { if (!sovrVietate.includes(b.dataset.id)) sovrVietate.push(b.dataset.id); cercaSoluzioni(); disegna(); }
+        else if (az === 'sovrAzzera') { sovrVietate = []; cercaSoluzioni(); disegna(); }
+        else if (az === 'sovrEsoneri') salvaEsoneriSovr();
+        else if (az === 'sovrExcel') excelSovr();
         else if (az === 'excel') scaricaExcel(b.dataset.codice);
         else if (az === 'togli') togli(b.dataset.codice, b.dataset.chiave);
         else if (az === 'excelEsoneri') excelEsoneri();

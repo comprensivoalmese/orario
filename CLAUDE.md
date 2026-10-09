@@ -246,7 +246,16 @@ Le parti del progetto:
   Nel conto: `esterni`, `oreEsterne`, `conflitti` = **verifica di compatibilità** (dal 09/10/2026; `tipo`: «sovrapposizione», «vicini» =
   meno di `foglio.margine` minuti per spostarsi, default 30, campo «Minuti per spostarsi» della sezione ricordato in `orariofacile.q40margine`,
   «senzaOrario»; esclusi esonerati e assenti; i primi due → avvisi). Sotto ogni scuola `verificaHtml` (tabella colorata + Excel `excelVerifica`
-  da mandare alla scuola); `caricaEsterni` fa la verifica già prima di salvare e la scrive nel messaggio di conferma. NON contano nelle nostre 40+40
+  da mandare alla scuola); `caricaEsterni` fa la verifica già prima di salvare e la scrive nel messaggio di conferma.
+  **Risolvere le sovrapposizioni** (dal 09/10/2026; calcolo in `orario-facile/sovrapposizioni.js`, `Sovrapposizioni.analizza`; sezione
+  «🔧 Sovrapposizioni con le altre scuole», `sovrapposizioniHtml`): per ognuna, in ordine di data, prova 1) riordino della sequenza di
+  classi «1A / 2A / 3A», 2) esonero dal nostro impegno con i criteri del Piano di esoneri (`pref`: «mai», protetti, massimo di esonerati;
+  scrutini/esami mai; se il docente scenderebbe sotto le dovute si SCAMBIA con un suo esonero approvato futuro), 3) altro orario lo stesso
+  giorno (passi di 15', max 3 h, pomeriggio non prima delle 14:00, fino alle 20:00), 4) altro giorno feriale vicino; ogni prova si
+  verifica con `calcola` (sparisce e non ne nascono altre; nessun accavallamento con nostri impegni delle stesse classi). Le altre sono
+  «non risolvibili»; le passate e quelle senza orario a parte. ✕ scarta una proposta (`sovrVietate`) e se ne cerca un'altra. Gli
+  esoneri si salvano approvati (`salvaEsoneriSovr`); le modifiche al piano NON si scrivono: «Scarica il piano degli impegni aggiornato»
+  (`excelSovr`: stesse colonne della scheda «Impegni», righe cambiate in giallo + foglio «Sovrapposizioni»). NON contano nelle nostre 40+40
   ma completano il piano del docente: dettaglio nella scheda, campo `esterni` nel file pubblicato, tabella nell'app e blocco nel suo Excel.
   `leggiFoglio` chiede prima i titoli delle schede e legge solo quelle facoltative che esistono (Esoneri, Presenze, Impegni altre scuole).
   creata se manca) e si sommano alla formazione degli impegni. `app/js/xlsx.js` (spostato da orario-facile/) sa scrivere formule,
