@@ -238,12 +238,31 @@
     la finestra di Google si riprova al primo tocco sullo schermo. Monitor e schermo all'ingresso non lo chiedono.
   */
   let attesaToccoDrive = false;
+  /*
+    Il file dei nomi aveva detto «non puoi aprirlo» (chiave orariodada.nomi = 'negato…'), ma nel frattempo può essere
+    stato condiviso (per esempio con un nuovo gruppo Google): appena c'è il permesso di Google si riprova SENZA aprire
+    nessuna finestra; se ora si apre, i nomi compaiono e il rifiuto ricordato si cancella.
+  */
+  async function riprovaNomiInSilenzio() {
+    if (nomi || soloCodici || !utente || !nomiNegati()) return;
+    if (!NomiDocenti.gettoneDisponibile([NomiDocenti.PERMESSO_DRIVE])) return;
+    try { nomi = await NomiDocenti.carica(utente.email); }
+    catch (e) { return; }   // ancora niente: resta il rifiuto ricordato
+    scrivi(CHIAVE_NOMI, '');
+    avvisoNomi = '';
+    applicaNomi();
+    mioDocente = Dati.docentePerEmail(utente.email);
+    preparaControlli();
+    aggiorna();
+  }
+
   async function permessoDrive() {
     if (!utente || aulaMonitor || secondiIngresso || typeof NomiDocenti === 'undefined' || !CONFIG.googleClientId) return;
     if (!(CONFIG.fileOrarioPubblicato || CONFIG.fileSostituzioniPubblicate || CONFIG.fileCompresenze)) return;
     try {
       await NomiDocenti.gettone([NomiDocenti.PERMESSO_DRIVE], utente.email);   // se c'è già non apre niente
       ricaricaDati(false);
+      riprovaNomiInSilenzio();
     } catch (e) {
       ricaricaDati(false);   // intanto si aggiorna il resto (orario da GitHub, ultima copia delle sostituzioni)
       if (/bloccato la finestra|popup/i.test(String(e && e.message || '')) && !attesaToccoDrive) {
