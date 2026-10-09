@@ -11,3 +11,5 @@
 *.docx binary
 *.xlsx binary
 *.pptx binary
+*.exe binary
+*.ico binary

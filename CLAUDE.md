@@ -303,6 +303,9 @@ potenziamento/    linee guida per assegnare le ore di potenziamento di italiano 
                   da seguire quando si costruisce in Orario Facile l'orario dei docenti di potenziamento;
                   le ore di potenziamento stanno nel Foglio Compresenze (gruppo «Potenziamento L2», scheda 8 di
                   Orario Facile); il vecchio Foglio «Orario potenziamento» è archiviato (27/09/2026)
+installa/         installa-icone.exe (link nella pagina iniziale): chiede quali icone mettere sul desktop e nel menu Start
+                  (Luis@i, Orario Facile; Chrome/Edge con --app, icone .ico dentro l'exe, non tocca le icone fatte in altro modo).
+                  Sorgente installa-icone.cs: dopo una modifica si ricompila con il csc.exe di Windows (comando in cima al file)
 strumenti/        script da usare sul PC (Windows + Excel), es. crea-database.ps1 per creare il Foglio database
 dati/orario.json  l'orario letto da app/ (formato dell'app o backup di Orario Facile)
 dati/campanella.json  orari della campanella per il tasto 🔔 dell'app (vedi app/js/campanella.js)
